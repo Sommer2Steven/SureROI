@@ -1,9 +1,23 @@
+/**
+ * MetricCard.tsx
+ *
+ * A compact, reusable card for displaying a single KPI metric.
+ * Used within MetricsBanner to show values like break-even month,
+ * Year 1 ROI, net savings, etc. Supports an optional highlight state
+ * (blue accent) to draw attention to key metrics and an optional
+ * subtext line for additional context.
+ */
+
 import React from 'react';
 
 interface MetricCardProps {
+  /** Display label shown above the value, e.g. "Break-even" */
   label: string;
+  /** Formatted metric value, e.g. "$42K" or "Month 8" */
   value: string;
+  /** Optional helper text displayed below the value, e.g. "at full adoption" */
   subtext?: string;
+  /** When true, applies a blue accent background/border instead of the default gray */
   highlight?: boolean;
 }
 
@@ -12,21 +26,26 @@ export function MetricCard({ label, value, subtext, highlight }: MetricCardProps
     <div
       className={`
         flex flex-col items-center justify-center px-4 py-3 rounded-lg min-w-[140px]
-        ${highlight ? 'bg-blue-900/40 border border-blue-500/30' : 'bg-gray-800/60 border border-gray-700/50'}
+        ${highlight ? 'bg-highlight border border-edge-highlight' : 'bg-card border border-edge'}
       `}
     >
-      <span className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">
+      {/* Uppercase label */}
+      <span className="text-xs font-medium text-ink-muted uppercase tracking-wider mb-1">
         {label}
       </span>
+
+      {/* Primary value — highlighted cards use blue text */}
       <span
         className={`text-xl font-bold ${
-          highlight ? 'text-blue-300' : 'text-white'
+          highlight ? 'text-ink-accent' : 'text-ink'
         }`}
       >
         {value}
       </span>
+
+      {/* Optional subtext for contextual details */}
       {subtext && (
-        <span className="text-xs text-gray-500 mt-0.5">{subtext}</span>
+        <span className="text-xs text-ink-muted mt-0.5">{subtext}</span>
       )}
     </div>
   );

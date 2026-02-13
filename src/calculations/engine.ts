@@ -1,6 +1,17 @@
+/**
+ * calculations/engine.ts
+ *
+ * The core ROI calculation engine. Pure functions with zero UI dependencies.
+ *
+ * Two main exports:
+ *   1. computeScenario()    — runs the full month-by-month simulation
+ *   2. getFormulaDisplays() — generates the "Show the Math" formula cards
+ */
+
 import type {
-  CurrentStateInputs,
   ScenarioInputs,
+  CurrentStateInputs,
+  InvestmentInputs,
   MonthlyBreakdown,
   ScenarioResults,
   FormulaDisplay,
@@ -63,48 +74,84 @@ export function calcNewMonthlyTotal(
   return newLabor + newRework + operational + monthlyRecurring;
 }
 
+export function calcUpfrontCost(investment: InvestmentInputs): number {
+  return investment.assemblyCost + investment.designCost + investment.controlsCost;
+}
+
+export function calcRedeploymentCost(investment: InvestmentInputs): number {
+  return investment.assemblyCost + investment.designCost + investment.controlsCost + investment.deploymentCost;
+}
+
 export function calcCumulativeInvestment(
-  upfront: number,
-  training: number,
-  deployment: number,
-  monthlyRecurring: number,
+  investment: InvestmentInputs,
   month: number
 ): number {
-  return upfront + training + deployment + monthlyRecurring * month;
+  const upfront = calcUpfrontCost(investment);
+  const base = upfront + investment.trainingCost + investment.deploymentCost + investment.monthlyRecurringCost * month;
+  if (investment.toolLifespanMonths > 0) {
+    const redeployments = Math.floor(month / investment.toolLifespanMonths);
+    return base + calcRedeploymentCost(investment) * redeployments;
+  }
+  return base;
 }
 
 // ── Main computation ────────────────────────────────────────────────────
 
+/**
+ * Runs the complete ROI simulation for one scenario.
+ *
+ * @param inputs — the scenario's own inputs
+ * @param analysisPeriod — global analysis period (months)
+ * @param baselineState — optional. When provided (for proposed scenarios),
+ *   the status quo costs are computed from baselineState while the "new tool"
+ *   costs are computed from the scenario's own currentState.
+ */
 export function computeScenario(
-  currentState: CurrentStateInputs,
   inputs: ScenarioInputs,
-  analysisPeriod: number
+  analysisPeriod: number,
+  baselineState?: CurrentStateInputs,
 ): ScenarioResults {
-  const { investment, efficiency } = inputs;
+  const { currentState, investment, efficiency } = inputs;
 
-  const currentLabor = calcMonthlyCurrentLabor(
-    currentState.workers,
-    currentState.hourlyRate,
-    currentState.hoursPerWeek
+  // Status quo costs — from baseline if provided, otherwise from own currentState
+  const sqState = baselineState ?? currentState;
+  const sqLabor = calcMonthlyCurrentLabor(sqState.workers, sqState.hourlyRate, sqState.hoursPerWeek);
+  const sqRework = calcMonthlyReworkCost(sqLabor, sqState.errorRate);
+  const sqTotal = calcTotalMonthlyCurrent(sqLabor, sqRework, sqState.monthlyOperationalCosts);
+
+  // "New tool" base costs — always from the scenario's own currentState
+  const proposedLabor = calcMonthlyCurrentLabor(
+    currentState.workers, currentState.hourlyRate, currentState.hoursPerWeek
   );
-  const currentRework = calcMonthlyReworkCost(currentLabor, currentState.errorRate);
-  const currentTotal = calcTotalMonthlyCurrent(
-    currentLabor,
-    currentRework,
-    currentState.monthlyOperationalCosts
-  );
+  const proposedRework = calcMonthlyReworkCost(proposedLabor, currentState.errorRate);
+
+  const upfrontCost = calcUpfrontCost(investment);
+  const utilization = efficiency.utilizationPercent;
 
   const monthlyBreakdowns: MonthlyBreakdown[] = [];
   let cumulativeStatusQuo = 0;
   let cumulativeNewTool =
-    investment.upfrontCost + investment.trainingCost + investment.deploymentCost;
+    upfrontCost + investment.trainingCost + investment.deploymentCost;
   let cumulativeSavings = 0;
   let breakEvenMonth: number | null = null;
 
   for (let month = 1; month <= analysisPeriod; month++) {
+    // Add redeployment cost at lifespan boundaries
+    if (
+      investment.toolLifespanMonths > 0 &&
+      month > 1 &&
+      (month - 1) % investment.toolLifespanMonths === 0 &&
+      month <= analysisPeriod
+    ) {
+      cumulativeNewTool += calcRedeploymentCost(investment);
+    }
+
     const adoptionRate = linearAdoption(month, efficiency.adoptionRampMonths);
-    const newLabor = calcNewMonthlyLabor(currentLabor, efficiency.timeSavings, adoptionRate);
-    const newRework = calcNewMonthlyRework(currentRework, efficiency.errorReduction, adoptionRate);
+
+    // Efficiency gains are scaled by utilization
+    const effectiveAdoption = adoptionRate * utilization;
+    const newLabor = calcNewMonthlyLabor(proposedLabor, efficiency.timeSavings, effectiveAdoption);
+    const newRework = calcNewMonthlyRework(proposedRework, efficiency.errorReduction, effectiveAdoption);
     const newTotal = calcNewMonthlyTotal(
       newLabor,
       newRework,
@@ -113,19 +160,13 @@ export function computeScenario(
     );
 
     const monthlySavings =
-      currentTotal - newTotal + efficiency.additionalMonthlyRevenue;
+      sqTotal - newTotal + efficiency.additionalMonthlyRevenue;
 
-    cumulativeStatusQuo += currentTotal;
+    cumulativeStatusQuo += sqTotal;
     cumulativeNewTool += newTotal;
     cumulativeSavings += monthlySavings;
 
-    const cumulativeInvestment = calcCumulativeInvestment(
-      investment.upfrontCost,
-      investment.trainingCost,
-      investment.deploymentCost,
-      investment.monthlyRecurringCost,
-      month
-    );
+    const cumulativeInvestment = calcCumulativeInvestment(investment, month);
 
     const netPos = cumulativeStatusQuo - cumulativeNewTool;
 
@@ -136,9 +177,9 @@ export function computeScenario(
     monthlyBreakdowns.push({
       month,
       adoptionRate,
-      currentLabor,
-      currentRework,
-      currentTotal,
+      currentLabor: sqLabor,
+      currentRework: sqRework,
+      currentTotal: sqTotal,
       newLabor,
       newRework,
       newTotal,
@@ -151,31 +192,20 @@ export function computeScenario(
     });
   }
 
-  const totalInvestment = calcCumulativeInvestment(
-    investment.upfrontCost,
-    investment.trainingCost,
-    investment.deploymentCost,
-    investment.monthlyRecurringCost,
-    analysisPeriod
-  );
+  const totalInvestment = calcCumulativeInvestment(investment, analysisPeriod);
 
   const lastMonth = monthlyBreakdowns[monthlyBreakdowns.length - 1];
   const threeYearNetSavings = lastMonth?.netPosition ?? 0;
 
+  const year1Investment = calcCumulativeInvestment(investment, Math.min(12, analysisPeriod));
   const month12 = monthlyBreakdowns[11];
-  const year1Investment = calcCumulativeInvestment(
-    investment.upfrontCost,
-    investment.trainingCost,
-    investment.deploymentCost,
-    investment.monthlyRecurringCost,
-    Math.min(12, analysisPeriod)
-  );
-  const year1ROI = month12
+  // Guard against divide-by-zero when all defaults are 0
+  const year1ROI = month12 && year1Investment > 0
     ? (month12.netPosition / year1Investment) * 100
     : 0;
 
-  const fullAdoptionLabor = calcNewMonthlyLabor(currentLabor, efficiency.timeSavings, 1);
-  const fullAdoptionRework = calcNewMonthlyRework(currentRework, efficiency.errorReduction, 1);
+  const fullAdoptionLabor = calcNewMonthlyLabor(proposedLabor, efficiency.timeSavings, utilization);
+  const fullAdoptionRework = calcNewMonthlyRework(proposedRework, efficiency.errorReduction, utilization);
   const fullAdoptionTotal = calcNewMonthlyTotal(
     fullAdoptionLabor,
     fullAdoptionRework,
@@ -183,12 +213,13 @@ export function computeScenario(
     investment.monthlyRecurringCost
   );
   const monthlySavingsAtFullAdoption =
-    currentTotal - fullAdoptionTotal + efficiency.additionalMonthlyRevenue;
+    sqTotal - fullAdoptionTotal + efficiency.additionalMonthlyRevenue;
 
   return {
     scenarioId: inputs.id,
     scenarioName: inputs.name,
     color: inputs.color,
+    qualitative: inputs.qualitative,
     monthlyBreakdowns,
     breakEvenMonth,
     year1ROI,
@@ -200,26 +231,31 @@ export function computeScenario(
 
 // ── Formula registry ────────────────────────────────────────────────────
 
+/**
+ * Generates the array of formula cards for the "Show the Math" panel.
+ */
 export function getFormulaDisplays(
-  currentState: CurrentStateInputs,
-  inputs: ScenarioInputs
+  inputs: ScenarioInputs,
+  analysisPeriod: number,
+  baselineState?: CurrentStateInputs,
+  costLocked?: boolean,
 ): FormulaDisplay[] {
-  const { investment, efficiency } = inputs;
+  const { currentState, investment, efficiency } = inputs;
 
-  const currentLabor = calcMonthlyCurrentLabor(
-    currentState.workers,
-    currentState.hourlyRate,
-    currentState.hoursPerWeek
-  );
-  const currentRework = calcMonthlyReworkCost(currentLabor, currentState.errorRate);
-  const currentTotal = calcTotalMonthlyCurrent(
-    currentLabor,
-    currentRework,
-    currentState.monthlyOperationalCosts
-  );
+  const sqState = baselineState ?? currentState;
+  const sqLabor = calcMonthlyCurrentLabor(sqState.workers, sqState.hourlyRate, sqState.hoursPerWeek);
+  const sqRework = calcMonthlyReworkCost(sqLabor, sqState.errorRate);
+  const sqTotal = calcTotalMonthlyCurrent(sqLabor, sqRework, sqState.monthlyOperationalCosts);
 
-  const fullAdoptionLabor = calcNewMonthlyLabor(currentLabor, efficiency.timeSavings, 1);
-  const fullAdoptionRework = calcNewMonthlyRework(currentRework, efficiency.errorReduction, 1);
+  const proposedLabor = calcMonthlyCurrentLabor(
+    currentState.workers, currentState.hourlyRate, currentState.hoursPerWeek
+  );
+  const proposedRework = calcMonthlyReworkCost(proposedLabor, currentState.errorRate);
+
+  const upfrontCost = calcUpfrontCost(investment);
+  const utilization = efficiency.utilizationPercent;
+  const fullAdoptionLabor = calcNewMonthlyLabor(proposedLabor, efficiency.timeSavings, utilization);
+  const fullAdoptionRework = calcNewMonthlyRework(proposedRework, efficiency.errorReduction, utilization);
   const fullAdoptionTotal = calcNewMonthlyTotal(
     fullAdoptionLabor,
     fullAdoptionRework,
@@ -227,45 +263,68 @@ export function getFormulaDisplays(
     investment.monthlyRecurringCost
   );
   const monthlySavings =
-    currentTotal - fullAdoptionTotal + efficiency.additionalMonthlyRevenue;
+    sqTotal - fullAdoptionTotal + efficiency.additionalMonthlyRevenue;
 
   const oneTimeInvestment =
-    investment.upfrontCost + investment.trainingCost + investment.deploymentCost;
+    upfrontCost + investment.trainingCost + investment.deploymentCost;
 
-  return [
+  const formulas: FormulaDisplay[] = [
     {
       id: 'monthly-labor',
-      label: 'Monthly Current Labor',
+      label: 'Monthly Baseline Labor',
       formula: 'workers × hourly_rate × hours/week × 4.33',
-      substituted: `${currentState.workers} × ${formatCurrency(currentState.hourlyRate)} × ${currentState.hoursPerWeek} × 4.33`,
-      result: formatCurrency(currentLabor),
+      substituted: `${sqState.workers} × ${formatCurrency(sqState.hourlyRate)} × ${sqState.hoursPerWeek} × 4.33`,
+      result: formatCurrency(sqLabor),
     },
     {
       id: 'monthly-rework',
-      label: 'Monthly Rework Cost',
+      label: 'Monthly Baseline Rework',
       formula: 'monthly_labor × error_rate',
-      substituted: `${formatCurrency(currentLabor)} × ${formatPercent(currentState.errorRate)}`,
-      result: formatCurrency(currentRework),
+      substituted: `${formatCurrency(sqLabor)} × ${formatPercent(sqState.errorRate)}`,
+      result: formatCurrency(sqRework),
     },
     {
       id: 'total-monthly-current',
-      label: 'Total Monthly Current Cost',
+      label: 'Total Monthly Baseline Cost',
       formula: 'labor + rework + operational_costs',
-      substituted: `${formatCurrency(currentLabor)} + ${formatCurrency(currentRework)} + ${formatCurrency(currentState.monthlyOperationalCosts)}`,
-      result: formatCurrency(currentTotal),
+      substituted: `${formatCurrency(sqLabor)} + ${formatCurrency(sqRework)} + ${formatCurrency(sqState.monthlyOperationalCosts)}`,
+      result: formatCurrency(sqTotal),
     },
+  ];
+
+  // Show proposed-state formulas when there's a baseline (i.e. this is a proposed scenario)
+  if (baselineState) {
+    formulas.push(
+      {
+        id: 'proposed-labor',
+        label: 'Proposed Monthly Labor',
+        formula: 'workers × hourly_rate × hours/week × 4.33',
+        substituted: `${currentState.workers} × ${formatCurrency(currentState.hourlyRate)} × ${currentState.hoursPerWeek} × 4.33`,
+        result: formatCurrency(proposedLabor),
+      },
+      {
+        id: 'proposed-rework',
+        label: 'Proposed Monthly Rework',
+        formula: 'proposed_labor × error_rate',
+        substituted: `${formatCurrency(proposedLabor)} × ${formatPercent(currentState.errorRate)}`,
+        result: formatCurrency(proposedRework),
+      },
+    );
+  }
+
+  formulas.push(
     {
       id: 'new-monthly-labor',
       label: 'New Monthly Labor (Full Adoption)',
-      formula: 'current_labor × (1 − time_savings)',
-      substituted: `${formatCurrency(currentLabor)} × (1 − ${formatPercent(efficiency.timeSavings)})`,
+      formula: 'proposed_labor × (1 − time_savings × utilization)',
+      substituted: `${formatCurrency(proposedLabor)} × (1 − ${formatPercent(efficiency.timeSavings)} × ${formatPercent(utilization)})`,
       result: formatCurrency(fullAdoptionLabor),
     },
     {
       id: 'new-monthly-rework',
       label: 'New Monthly Rework (Full Adoption)',
-      formula: 'current_rework × (1 − error_reduction)',
-      substituted: `${formatCurrency(currentRework)} × (1 − ${formatPercent(efficiency.errorReduction)})`,
+      formula: 'proposed_rework × (1 − error_reduction × utilization)',
+      substituted: `${formatCurrency(proposedRework)} × (1 − ${formatPercent(efficiency.errorReduction)} × ${formatPercent(utilization)})`,
       result: formatCurrency(fullAdoptionRework),
     },
     {
@@ -278,17 +337,37 @@ export function getFormulaDisplays(
     {
       id: 'monthly-savings',
       label: 'Monthly Savings (Full Adoption)',
-      formula: 'current_total − new_total + additional_revenue',
-      substituted: `${formatCurrency(currentTotal)} − ${formatCurrency(fullAdoptionTotal)} + ${formatCurrency(efficiency.additionalMonthlyRevenue)}`,
+      formula: 'baseline_total − new_total + additional_revenue',
+      substituted: `${formatCurrency(sqTotal)} − ${formatCurrency(fullAdoptionTotal)} + ${formatCurrency(efficiency.additionalMonthlyRevenue)}`,
       result: formatCurrency(monthlySavings),
     },
     {
       id: 'one-time-investment',
       label: 'One-Time Investment',
-      formula: 'upfront + training + deployment',
-      substituted: `${formatCurrency(investment.upfrontCost)} + ${formatCurrency(investment.trainingCost)} + ${formatCurrency(investment.deploymentCost)}`,
+      formula: 'assembly + design + controls + training + deployment',
+      substituted: costLocked
+        ? `*** + *** + *** + ${formatCurrency(investment.trainingCost)} + ${formatCurrency(investment.deploymentCost)}`
+        : `${formatCurrency(investment.assemblyCost)} + ${formatCurrency(investment.designCost)} + ${formatCurrency(investment.controlsCost)} + ${formatCurrency(investment.trainingCost)} + ${formatCurrency(investment.deploymentCost)}`,
       result: formatCurrency(oneTimeInvestment),
     },
+  );
+
+  // Redeployment formula card when lifespan is set
+  if (investment.toolLifespanMonths > 0) {
+    const redeploymentCost = calcRedeploymentCost(investment);
+    const redeployments = Math.floor(analysisPeriod / investment.toolLifespanMonths);
+    formulas.push({
+      id: 'redeployment',
+      label: 'Redeployment Cost',
+      formula: '(assembly + design + controls + deployment) × floor(period / lifespan)',
+      substituted: costLocked
+        ? `*** × floor(${analysisPeriod} / ${investment.toolLifespanMonths})`
+        : `${formatCurrency(redeploymentCost)} × floor(${analysisPeriod} / ${investment.toolLifespanMonths})`,
+      result: `${redeployments} cycle(s) = ${formatCurrency(redeploymentCost * redeployments)}`,
+    });
+  }
+
+  formulas.push(
     {
       id: 'adoption-rate',
       label: 'Adoption Rate (month t)',
@@ -303,5 +382,7 @@ export function getFormulaDisplays(
       substituted: `(cumulative_savings − cumulative_investment) / cumulative_investment × 100`,
       result: 'Calculated per month',
     },
-  ];
+  );
+
+  return formulas;
 }

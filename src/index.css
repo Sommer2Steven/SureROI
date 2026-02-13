@@ -1,6 +1,80 @@
+/*
+ * index.css
+ *
+ * Global styles for SureROI with dark/light mode support via CSS custom properties.
+ * Semantic utility classes defined via @utility directives reference these vars.
+ */
+
 @import "tailwindcss";
 
-/* Custom scrollbar for dark theme */
+/* ── Light mode (default root) ──────────────────────────────────────── */
+:root {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-input: #f1f5f9;
+  --bg-hover: #f1f5f9;
+  --bg-active: #dbeafe;
+  --bg-highlight: #eff6ff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-accent: #2563eb;
+  --text-positive: #059669;
+  --text-negative: #dc2626;
+  --border-color: #e2e8f0;
+  --border-highlight: #bfdbfe;
+  --chart-grid: #e2e8f0;
+  --chart-axis: #64748b;
+  --scrollbar-thumb: #94a3b8;
+  --scrollbar-thumb-hover: #64748b;
+}
+
+/* ── Dark mode ──────────────────────────────────────────────────────── */
+.dark {
+  --bg-primary: #030712;
+  --bg-secondary: #111827;
+  --bg-card: #1f2937;
+  --bg-input: #374151;
+  --bg-hover: #1e293b;
+  --bg-active: #374151;
+  --bg-highlight: rgba(30, 58, 138, 0.4);
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #9ca3af;
+  --text-accent: #93c5fd;
+  --text-positive: #34d399;
+  --text-negative: #f87171;
+  --border-color: #334155;
+  --border-highlight: rgba(59, 130, 246, 0.3);
+  --chart-grid: #334155;
+  --chart-axis: #9ca3af;
+  --scrollbar-thumb: #4b5563;
+  --scrollbar-thumb-hover: #6b7280;
+}
+
+/* ── Semantic background utilities ────────────────────────────────── */
+@utility bg-page       { background-color: var(--bg-primary); }
+@utility bg-surface    { background-color: var(--bg-secondary); }
+@utility bg-card       { background-color: var(--bg-card); }
+@utility bg-field      { background-color: var(--bg-input); }
+@utility bg-hovered    { background-color: var(--bg-hover); }
+@utility bg-selected   { background-color: var(--bg-active); }
+@utility bg-highlight  { background-color: var(--bg-highlight); }
+
+/* ── Semantic text utilities ──────────────────────────────────────── */
+@utility text-ink            { color: var(--text-primary); }
+@utility text-ink-secondary  { color: var(--text-secondary); }
+@utility text-ink-muted      { color: var(--text-muted); }
+@utility text-ink-accent     { color: var(--text-accent); }
+@utility text-ink-positive   { color: var(--text-positive); }
+@utility text-ink-negative   { color: var(--text-negative); }
+
+/* ── Semantic border utilities ────────────────────────────────────── */
+@utility border-edge           { border-color: var(--border-color); }
+@utility border-edge-highlight { border-color: var(--border-highlight); }
+
+/* ── Custom scrollbar ───────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -11,19 +85,40 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: var(--scrollbar-thumb-hover);
 }
 
-/* Print-friendly styles */
+/* ── Print-friendly styles ──────────────────────────────────────────── */
 @media print {
   body {
     background: white !important;
     color: black !important;
+  }
+
+  /* Force light theme for print */
+  .dark {
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-card: #ffffff;
+    --bg-input: #f1f5f9;
+    --bg-hover: #f1f5f9;
+    --bg-active: #dbeafe;
+    --bg-highlight: #eff6ff;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    --text-accent: #2563eb;
+    --text-positive: #059669;
+    --text-negative: #dc2626;
+    --border-color: #e2e8f0;
+    --border-highlight: #bfdbfe;
+    --chart-grid: #e2e8f0;
+    --chart-axis: #64748b;
   }
 
   .recharts-wrapper {

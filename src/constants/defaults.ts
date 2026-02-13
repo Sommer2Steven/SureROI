@@ -1,75 +1,66 @@
-import type { ScenarioInputs } from '../types';
+/**
+ * constants/defaults.ts
+ *
+ * Default values, color palette, and factory function for creating new scenarios.
+ * All defaults are zeroed so the user starts from a blank slate.
+ */
 
-export const SCENARIO_COLORS = ['#2563EB', '#F97316', '#8B5CF6'] as const;
-export const SCENARIO_NAMES = ['Scenario 1', 'Scenario 2', 'Scenario 3'] as const;
-export const MAX_SCENARIOS = 3;
+import type { CurrentStateInputs, InvestmentInputs, EfficiencyInputs, QualitativeFlags, ScenarioInputs } from '../types';
 
-export const DEFAULT_CURRENT_STATE = {
-  workers: 50,
-  hourlyRate: 45,
-  hoursPerWeek: 10,
-  errorRate: 0.12,
-  monthlyOperationalCosts: 5000,
-} as const;
+export const SCENARIO_COLORS = ['#2563EB', '#F97316', '#8B5CF6', '#10B981', '#EC4899', '#F59E0B'] as const;
+export const MAX_SCENARIOS = 6;
 
-export const DEFAULT_INVESTMENT = {
-  upfrontCost: 150000,
-  monthlyRecurringCost: 3000,
-  trainingCost: 25000,
-  deploymentCost: 15000,
-} as const;
+// ── All defaults zeroed ─────────────────────────────────────────────────
+export const DEFAULT_CURRENT_STATE: CurrentStateInputs = {
+  workers: 0,
+  hourlyRate: 0,
+  hoursPerWeek: 0,
+  errorRate: 0,
+  monthlyOperationalCosts: 0,
+};
 
-export const DEFAULT_EFFICIENCY = {
-  timeSavings: 0.30,
-  errorReduction: 0.50,
+export const DEFAULT_INVESTMENT: InvestmentInputs = {
+  assemblyCost: 0,
+  designCost: 0,
+  controlsCost: 0,
+  monthlyRecurringCost: 0,
+  trainingCost: 0,
+  deploymentCost: 0,
+  toolLifespanMonths: 0,
+};
+
+export const DEFAULT_EFFICIENCY: EfficiencyInputs = {
+  timeSavings: 0,
+  errorReduction: 0,
+  utilizationPercent: 1,
   adoptionRampMonths: 6,
   additionalMonthlyRevenue: 0,
-} as const;
+};
+
+export const DEFAULT_QUALITATIVE: QualitativeFlags = {
+  safetyCritical: false,
+  qualityCritical: false,
+  operationsCritical: false,
+};
 
 export const DEFAULT_ANALYSIS_PERIOD = 36;
 
 let scenarioCounter = 0;
 
+/**
+ * Factory function: creates a new ScenarioInputs object with zeroed defaults.
+ * @param index — position in the scenario list (for color assignment and naming)
+ */
 export function createDefaultScenario(index: number = 0): ScenarioInputs {
   scenarioCounter++;
   return {
     id: `scenario-${Date.now()}-${scenarioCounter}`,
-    name: SCENARIO_NAMES[index] ?? `Scenario ${index + 1}`,
+    name: index === 0 ? 'Current Solution' : `Scenario ${index + 1}`,
     color: SCENARIO_COLORS[index % SCENARIO_COLORS.length],
+    currentState: { ...DEFAULT_CURRENT_STATE },
     investment: { ...DEFAULT_INVESTMENT },
     efficiency: { ...DEFAULT_EFFICIENCY },
+    qualitative: { ...DEFAULT_QUALITATIVE },
+    costBreakdownLocked: false,
   };
 }
-
-export const PRESET_BUILD_VS_BUY = {
-  build: {
-    name: 'Build (Custom)',
-    investment: {
-      upfrontCost: 250000,
-      monthlyRecurringCost: 2000,
-      trainingCost: 15000,
-      deploymentCost: 25000,
-    },
-    efficiency: {
-      timeSavings: 0.35,
-      errorReduction: 0.60,
-      adoptionRampMonths: 9,
-      additionalMonthlyRevenue: 0,
-    },
-  },
-  buy: {
-    name: 'Buy (SaaS)',
-    investment: {
-      upfrontCost: 50000,
-      monthlyRecurringCost: 5000,
-      trainingCost: 25000,
-      deploymentCost: 10000,
-    },
-    efficiency: {
-      timeSavings: 0.25,
-      errorReduction: 0.45,
-      adoptionRampMonths: 4,
-      additionalMonthlyRevenue: 0,
-    },
-  },
-} as const;

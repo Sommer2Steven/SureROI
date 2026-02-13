@@ -1,6 +1,13 @@
-import React from 'react';
+/**
+ * ScenarioTabs.tsx
+ *
+ * Horizontal tab bar for switching between scenarios.
+ * The current solution tab gets a red dot and "(Baseline)" suffix.
+ * Double-click a tab name to rename; Enter or blur saves.
+ */
+
+import React, { useState, useRef, useEffect } from 'react';
 import type { ScenarioInputs, AppAction } from '../../types';
-import { STATUS_QUO_ID } from '../../types';
 import { MAX_SCENARIOS } from '../../constants/defaults';
 
 interface ScenarioTabsProps {
@@ -10,70 +17,101 @@ interface ScenarioTabsProps {
 }
 
 export function ScenarioTabs({ scenarios, activeId, dispatch }: ScenarioTabsProps) {
-  const isStatusQuoActive = activeId === STATUS_QUO_ID;
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingId && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editingId]);
+
+  function startRename(scenario: ScenarioInputs) {
+    setEditingId(scenario.id);
+    setEditValue(scenario.name);
+  }
+
+  function commitRename() {
+    if (editingId && editValue.trim()) {
+      dispatch({ type: 'RENAME_SCENARIO', id: editingId, name: editValue.trim() });
+    }
+    setEditingId(null);
+  }
 
   return (
-    <div className="flex items-center gap-1 px-2 pt-3 pb-2 border-b border-gray-700 flex-wrap">
-      {/* Permanent Status Quo tab */}
-      <button
-        onClick={() => dispatch({ type: 'SET_ACTIVE', id: STATUS_QUO_ID })}
-        className={`
-          relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors
-          ${
-            isStatusQuoActive
-              ? 'bg-gray-700 text-white'
-              : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-          }
-        `}
-      >
-        <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-red-600" />
-        <span>Status Quo</span>
-      </button>
+    <div className="flex items-center gap-1 px-2 pt-3 pb-2 border-b border-edge flex-wrap">
+      {scenarios.map((s, idx) => {
+        const isBaseline = idx === 0;
+        const dotColor = isBaseline ? '#DC2626' : s.color;
+        return (
+          <button
+            key={s.id}
+            onClick={() => dispatch({ type: 'SET_ACTIVE', id: s.id })}
+            className={`
+              relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors
+              ${
+                s.id === activeId
+                  ? 'bg-selected text-ink'
+                  : 'text-ink-muted hover:text-ink hover:bg-hovered'
+              }
+            `}
+          >
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: dotColor }}
+            />
+            {editingId === s.id ? (
+              <input
+                ref={inputRef}
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') setEditingId(null);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-field text-ink text-sm px-1 py-0 rounded w-24 outline-none"
+              />
+            ) : (
+              <span
+                className="truncate max-w-[120px]"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  startRename(s);
+                }}
+                title="Double-click to rename"
+              >
+                {s.name}
+                {isBaseline && (
+                  <span className="text-xs text-red-400 ml-1">(Baseline)</span>
+                )}
+              </span>
+            )}
+            {scenarios.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  dispatch({ type: 'REMOVE_SCENARIO', id: s.id });
+                }}
+                className="ml-1 text-ink-muted hover:text-ink-negative transition-colors"
+                title="Remove scenario"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </button>
+        );
+      })}
 
-      {/* Divider */}
-      <div className="w-px h-5 bg-gray-700 mx-1" />
-
-      {/* Scenario tabs */}
-      {scenarios.map((s) => (
-        <button
-          key={s.id}
-          onClick={() => dispatch({ type: 'SET_ACTIVE', id: s.id })}
-          className={`
-            relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors
-            ${
-              s.id === activeId
-                ? 'bg-gray-700 text-white'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-            }
-          `}
-        >
-          <span
-            className="w-2.5 h-2.5 rounded-full shrink-0"
-            style={{ backgroundColor: s.color }}
-          />
-          <span className="truncate max-w-[80px]">{s.name}</span>
-          {scenarios.length > 1 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                dispatch({ type: 'REMOVE_SCENARIO', id: s.id });
-              }}
-              className="ml-1 text-gray-500 hover:text-red-400 transition-colors"
-              title="Remove scenario"
-            >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-        </button>
-      ))}
-
-      {/* Add / Duplicate buttons */}
       {scenarios.length < MAX_SCENARIOS && (
         <button
           onClick={() => dispatch({ type: 'ADD_SCENARIO' })}
-          className="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"
+          className="flex items-center gap-1 px-2 py-1.5 text-sm text-ink-muted hover:text-ink hover:bg-hovered rounded-md transition-colors"
           title="Add scenario"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -82,12 +120,12 @@ export function ScenarioTabs({ scenarios, activeId, dispatch }: ScenarioTabsProp
           <span>Add</span>
         </button>
       )}
-      {scenarios.length > 0 && !isStatusQuoActive && (
+
+      {/* Duplicate button — available for any active scenario */}
+      {scenarios.length < MAX_SCENARIOS && (
         <button
-          onClick={() =>
-            dispatch({ type: 'DUPLICATE_SCENARIO', id: activeId })
-          }
-          className="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-gray-800 rounded-md transition-colors"
+          onClick={() => dispatch({ type: 'DUPLICATE_SCENARIO', id: activeId })}
+          className="flex items-center gap-1 px-2 py-1.5 text-sm text-ink-muted hover:text-ink hover:bg-hovered rounded-md transition-colors"
           title="Duplicate active scenario"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

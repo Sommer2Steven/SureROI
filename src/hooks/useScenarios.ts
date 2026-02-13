@@ -1,9 +1,14 @@
+/**
+ * hooks/useScenarios.ts
+ *
+ * Central state management hook for the entire application.
+ * Uses React's useReducer to manage all app state in one place.
+ */
+
 import { useReducer } from 'react';
-import type { AppState, AppAction } from '../types';
+import type { AppState, AppAction, ProjectFile } from '../types';
 import {
   createDefaultScenario,
-  DEFAULT_CURRENT_STATE,
-  DEFAULT_ANALYSIS_PERIOD,
   SCENARIO_COLORS,
   MAX_SCENARIOS,
 } from '../constants/defaults';
@@ -11,17 +16,22 @@ import {
 const firstScenario = createDefaultScenario(0);
 
 const initialState: AppState = {
-  currentState: { ...DEFAULT_CURRENT_STATE },
-  analysisPeriod: DEFAULT_ANALYSIS_PERIOD,
   scenarios: [firstScenario],
   activeScenarioId: firstScenario.id,
+  analysisPeriod: 36,
   chartView: 'cumulative',
   showBreakdown: false,
   showMonthlyTable: false,
+  projectTitle: '',
+  projectDescription: '',
+  sidebarCollapsed: false,
+  darkMode: true,
+  appMode: 'project',
 };
 
 function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
+
     case 'ADD_SCENARIO': {
       if (state.scenarios.length >= MAX_SCENARIOS) return state;
       const newScenario = createDefaultScenario(state.scenarios.length);
@@ -58,7 +68,11 @@ function reducer(state: AppState, action: AppAction): AppState {
     case 'UPDATE_CURRENT_STATE': {
       return {
         ...state,
-        currentState: { ...state.currentState, ...action.updates },
+        scenarios: state.scenarios.map((s) =>
+          s.id === action.id
+            ? { ...s, currentState: { ...s.currentState, ...action.updates } }
+            : s
+        ),
       };
     }
 
@@ -85,9 +99,26 @@ function reducer(state: AppState, action: AppAction): AppState {
     }
 
     case 'UPDATE_ANALYSIS_PERIOD': {
+      return { ...state, analysisPeriod: action.period };
+    }
+
+    case 'UPDATE_QUALITATIVE': {
       return {
         ...state,
-        analysisPeriod: action.period,
+        scenarios: state.scenarios.map((s) =>
+          s.id === action.id
+            ? { ...s, qualitative: { ...s.qualitative, ...action.updates } }
+            : s
+        ),
+      };
+    }
+
+    case 'RENAME_SCENARIO': {
+      return {
+        ...state,
+        scenarios: state.scenarios.map((s) =>
+          s.id === action.id ? { ...s, name: action.name } : s
+        ),
       };
     }
 
@@ -124,6 +155,44 @@ function reducer(state: AppState, action: AppAction): AppState {
 
     case 'TOGGLE_MONTHLY_TABLE': {
       return { ...state, showMonthlyTable: !state.showMonthlyTable };
+    }
+
+    case 'SET_PROJECT_TITLE': {
+      return { ...state, projectTitle: action.title };
+    }
+
+    case 'SET_PROJECT_DESCRIPTION': {
+      return { ...state, projectDescription: action.description };
+    }
+
+    case 'TOGGLE_SIDEBAR': {
+      return { ...state, sidebarCollapsed: !state.sidebarCollapsed };
+    }
+
+    case 'TOGGLE_DARK_MODE': {
+      return { ...state, darkMode: !state.darkMode };
+    }
+
+    case 'SET_APP_MODE': {
+      return { ...state, appMode: action.mode };
+    }
+
+    case 'LOAD_PROJECT': {
+      const p = action.project;
+      return {
+        ...state,
+        projectTitle: p.projectTitle,
+        projectDescription: p.projectDescription,
+        analysisPeriod: p.analysisPeriod,
+        darkMode: p.darkMode,
+        scenarios: p.scenarios,
+        activeScenarioId: p.scenarios[0]?.id ?? state.activeScenarioId,
+        // Reset transient UI state
+        chartView: 'cumulative',
+        showBreakdown: false,
+        showMonthlyTable: false,
+        sidebarCollapsed: false,
+      };
     }
 
     default:

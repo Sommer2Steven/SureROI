@@ -4,14 +4,17 @@
   "version": "1.0.0",
   "type": "module",
   "main": "electron/main.cjs",
+  "description": "ROI calculator for comparing current vs. proposed solutions",
+  "author": "Steven Sommer",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "electron:dev": "npm run build && electron .",
-    "electron:build": "npm run build && electron-builder --win portable"
+    "dist": "npm run build && electron-builder --win dir"
   },
   "dependencies": {
+    "html2canvas-pro": "^1.6.6",
+    "jspdf": "^4.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.15.0"

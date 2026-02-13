@@ -1,78 +1,162 @@
+/**
+ * App.tsx
+ *
+ * Root component that wires together all the pieces of SureROI.
+ * One shared baseline (Current Solution) vs. proposed scenarios.
+ */
+
 import React from 'react';
-import { STATUS_QUO_ID } from './types';
 import { useScenarios } from './hooks/useScenarios';
 import { useCalculations } from './hooks/useCalculations';
 import { useChartData } from './hooks/useChartData';
+import { useExportPDF } from './hooks/useExportPDF';
+import { useSaveLoad } from './hooks/useSaveLoad';
+import { usePortfolio } from './hooks/usePortfolio';
+import { usePortfolioCalculations } from './hooks/usePortfolioCalculations';
+import { usePortfolioSaveLoad } from './hooks/usePortfolioSaveLoad';
 import { AppHeader } from './components/layout/AppHeader';
 import { AppLayout } from './components/layout/AppLayout';
 import { MetricsBanner } from './components/metrics/MetricsBanner';
 import { ScenarioTabs } from './components/inputs/ScenarioTabs';
 import { ScenarioPanel } from './components/inputs/ScenarioPanel';
-import { StatusQuoPanel } from './components/inputs/StatusQuoPanel';
+import { InputField } from './components/inputs/InputField';
 import { ChartContainer } from './components/charts/ChartContainer';
 import { CalculationBreakdown } from './components/breakdown/CalculationBreakdown';
+import { PortfolioView } from './components/portfolio/PortfolioView';
 
 export default function App() {
   const { state, dispatch } = useScenarios();
-  const results = useCalculations(state.currentState, state.scenarios, state.analysisPeriod);
+
+  // Run ROI calculations — returns [currentSolutionResult, ...proposedResults]
+  const results = useCalculations(state.scenarios, state.analysisPeriod);
+
   const { cumulativeData, monthlySavingsData, compareData } = useChartData(results);
 
-  const isStatusQuoActive = state.activeScenarioId === STATUS_QUO_ID;
+  const { saveProject, loadProject } = useSaveLoad({ state, dispatch });
+
+  const { exportPDF, isExporting } = useExportPDF({
+    projectTitle: state.projectTitle,
+    projectDescription: state.projectDescription,
+    scenarios: state.scenarios,
+    results,
+    analysisPeriod: state.analysisPeriod,
+    chartView: state.chartView,
+    dispatch,
+  });
+
+  // Portfolio hooks
+  const { portfolioState, portfolioDispatch } = usePortfolio();
+  const { entryResults, aggregates, monthlySavingsTimeline, netPositionTimeline } = usePortfolioCalculations(
+    portfolioState.entries,
+    portfolioState.departmentAnnualSalary,
+  );
+  const { savePortfolio, loadPortfolio } = usePortfolioSaveLoad({
+    portfolioState,
+    portfolioDispatch,
+  });
+
   const activeScenario = state.scenarios.find((s) => s.id === state.activeScenarioId);
   const activeResults = results.find((r) => r.scenarioId === state.activeScenarioId);
 
-  // For breakdown, default to first scenario if Status Quo tab is active
+  const currentSolution = state.scenarios[0];
+
   const breakdownScenario = activeScenario ?? state.scenarios[0];
   const breakdownResults = activeResults ?? results[0];
 
   return (
-    <div className="h-screen flex flex-col bg-gray-950 text-white">
-      <AppHeader />
-      <MetricsBanner results={results} />
-      <AppLayout
-        sidebar={
-          <>
-            <ScenarioTabs
-              scenarios={state.scenarios}
-              activeId={state.activeScenarioId}
-              dispatch={dispatch}
-            />
-            <div className="px-3 py-2">
-              {isStatusQuoActive ? (
-                <StatusQuoPanel
-                  currentState={state.currentState}
-                  analysisPeriod={state.analysisPeriod}
+    <div className={`h-screen flex flex-col bg-page text-ink ${state.darkMode ? 'dark' : ''}`}>
+      <AppHeader
+        projectTitle={state.projectTitle}
+        projectDescription={state.projectDescription}
+        sidebarCollapsed={state.sidebarCollapsed}
+        darkMode={state.darkMode}
+        dispatch={dispatch}
+        onExportPDF={exportPDF}
+        isExporting={isExporting}
+        onSave={saveProject}
+        onLoad={loadProject}
+        appMode={state.appMode}
+        portfolioName={portfolioState.portfolioName}
+        portfolioDescription={portfolioState.portfolioDescription}
+        portfolioDispatch={portfolioDispatch}
+        onPortfolioSave={savePortfolio}
+        onPortfolioLoad={loadPortfolio}
+      />
+
+      {state.appMode === 'project' ? (
+        <>
+          <MetricsBanner results={results} />
+
+          <AppLayout
+            sidebarCollapsed={state.sidebarCollapsed}
+            sidebar={
+              <>
+                <div className="px-3 pt-3 pb-1 border-b border-edge">
+                  <InputField
+                    label="Analysis Period"
+                    value={state.analysisPeriod}
+                    onChange={(v) => dispatch({ type: 'UPDATE_ANALYSIS_PERIOD', period: v })}
+                    min={6}
+                    max={60}
+                    step={6}
+                    suffix="mo"
+                  />
+                </div>
+                <ScenarioTabs
+                  scenarios={state.scenarios}
+                  activeId={state.activeScenarioId}
                   dispatch={dispatch}
                 />
-              ) : activeScenario ? (
-                <ScenarioPanel scenario={activeScenario} dispatch={dispatch} />
-              ) : null}
-            </div>
-          </>
-        }
-        main={
-          <ChartContainer
-            chartView={state.chartView}
-            dispatch={dispatch}
-            results={results}
-            cumulativeData={cumulativeData}
-            monthlySavingsData={monthlySavingsData}
-            compareData={compareData}
+                <div className="px-3 py-2">
+                  {activeScenario ? (
+                    <ScenarioPanel
+                      scenario={activeScenario}
+                      isBaseline={activeScenario.id === state.scenarios[0]?.id}
+                      dispatch={dispatch}
+                    />
+                  ) : null}
+                </div>
+              </>
+            }
+            main={
+              <ChartContainer
+                chartView={state.chartView}
+                dispatch={dispatch}
+                results={results}
+                cumulativeData={cumulativeData}
+                monthlySavingsData={monthlySavingsData}
+                compareData={compareData}
+                darkMode={state.darkMode}
+              />
+            }
+            bottom={
+              breakdownScenario && breakdownResults ? (
+                <CalculationBreakdown
+                  scenario={breakdownScenario}
+                  currentSolution={currentSolution}
+                  analysisPeriod={state.analysisPeriod}
+                  results={breakdownResults}
+                  showBreakdown={state.showBreakdown}
+                  showMonthlyTable={state.showMonthlyTable}
+                  dispatch={dispatch}
+                />
+              ) : null
+            }
           />
-        }
-        bottom={
-          breakdownScenario && breakdownResults ? (
-            <CalculationBreakdown
-              currentState={state.currentState}
-              scenario={breakdownScenario}
-              results={breakdownResults}
-              showBreakdown={state.showBreakdown}
-              showMonthlyTable={state.showMonthlyTable}
-              dispatch={dispatch}
-            />
-          ) : null
-        }
-      />
+        </>
+      ) : (
+        <PortfolioView
+          entries={portfolioState.entries}
+          departmentAnnualSalary={portfolioState.departmentAnnualSalary}
+          entryResults={entryResults}
+          aggregates={aggregates}
+          monthlySavingsTimeline={monthlySavingsTimeline}
+          netPositionTimeline={netPositionTimeline}
+          dispatch={portfolioDispatch}
+          sidebarCollapsed={state.sidebarCollapsed}
+          darkMode={state.darkMode}
+        />
+      )}
     </div>
   );
 }

@@ -1,3 +1,13 @@
+/**
+ * ChartContainer.tsx
+ *
+ * Top-level wrapper for the chart section of the SureROI dashboard.
+ * Renders a row of tab buttons (Cumulative / Monthly / Compare) and
+ * conditionally mounts the corresponding chart component based on the
+ * currently selected `chartView`. State changes are dispatched through
+ * the app-level reducer via the `dispatch` prop.
+ */
+
 import React from 'react';
 import type { ChartView, ScenarioResults, AppAction } from '../../types';
 import type { CumulativeDataPoint, MonthlySavingsDataPoint, CompareDataPoint } from '../../hooks/useChartData';
@@ -12,8 +22,10 @@ interface ChartContainerProps {
   cumulativeData: CumulativeDataPoint[];
   monthlySavingsData: MonthlySavingsDataPoint[];
   compareData: CompareDataPoint[];
+  darkMode: boolean;
 }
 
+/** Static tab definitions that drive the tab bar rendering below. */
 const VIEW_TABS: { key: ChartView; label: string }[] = [
   { key: 'cumulative', label: 'Cumulative' },
   { key: 'monthly', label: 'Monthly' },
@@ -27,10 +39,11 @@ export function ChartContainer({
   cumulativeData,
   monthlySavingsData,
   compareData,
+  darkMode,
 }: ChartContainerProps) {
   return (
     <div>
-      {/* View tabs */}
+      {/* Tab bar: switches between the three chart views */}
       <div className="flex items-center gap-1 mb-4">
         {VIEW_TABS.map((tab) => (
           <button
@@ -41,7 +54,7 @@ export function ChartContainer({
               ${
                 chartView === tab.key
                   ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700'
+                  : 'bg-card text-ink-muted hover:text-ink-secondary hover:bg-hovered'
               }
             `}
           >
@@ -50,16 +63,16 @@ export function ChartContainer({
         ))}
       </div>
 
-      {/* Chart */}
-      <div className="bg-gray-850 rounded-lg p-4 border border-gray-700/50">
+      {/* Active chart panel: only the selected view is mounted at a time */}
+      <div className="bg-card rounded-lg p-4 border border-edge">
         {chartView === 'cumulative' && (
-          <CumulativeCostChart data={cumulativeData} results={results} />
+          <CumulativeCostChart data={cumulativeData} results={results} darkMode={darkMode} />
         )}
         {chartView === 'monthly' && (
-          <MonthlySavingsChart data={monthlySavingsData} results={results} />
+          <MonthlySavingsChart data={monthlySavingsData} results={results} darkMode={darkMode} />
         )}
         {chartView === 'compare' && (
-          <ScenarioComparison data={compareData} results={results} />
+          <ScenarioComparison data={compareData} results={results} darkMode={darkMode} />
         )}
       </div>
     </div>

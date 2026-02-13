@@ -1,12 +1,21 @@
+/**
+ * CalculationBreakdown.tsx
+ *
+ * Collapsible panel that provides full transparency into the ROI calculations.
+ * For proposed scenarios, merges the current solution's baseline into the inputs
+ * before generating formula displays.
+ */
+
 import React from 'react';
-import type { CurrentStateInputs, ScenarioInputs, ScenarioResults, AppAction } from '../../types';
+import type { ScenarioInputs, ScenarioResults, AppAction } from '../../types';
 import { getFormulaDisplays } from '../../calculations/engine';
 import { FormulaRow } from './FormulaRow';
 import { MonthlyTable } from './MonthlyTable';
 
 interface CalculationBreakdownProps {
-  currentState: CurrentStateInputs;
   scenario: ScenarioInputs;
+  currentSolution: ScenarioInputs | undefined;
+  analysisPeriod: number;
   results: ScenarioResults;
   showBreakdown: boolean;
   showMonthlyTable: boolean;
@@ -14,21 +23,27 @@ interface CalculationBreakdownProps {
 }
 
 export function CalculationBreakdown({
-  currentState,
   scenario,
+  currentSolution,
+  analysisPeriod,
   results,
   showBreakdown,
   showMonthlyTable,
   dispatch,
 }: CalculationBreakdownProps) {
-  const formulas = getFormulaDisplays(currentState, scenario);
+  // For proposed scenarios, pass the baseline's currentState separately
+  const isBaseline = currentSolution && scenario.id === currentSolution.id;
+  const baselineState = !isBaseline && currentSolution
+    ? currentSolution.currentState
+    : undefined;
+
+  const formulas = getFormulaDisplays(scenario, analysisPeriod, baselineState, scenario.costBreakdownLocked);
 
   return (
-    <div className="border-t border-gray-700/50">
-      {/* Toggle button */}
+    <div className="border-t border-edge">
       <button
         onClick={() => dispatch({ type: 'TOGGLE_BREAKDOWN' })}
-        className="w-full flex items-center gap-2 px-6 py-4 text-sm font-semibold text-gray-300 hover:text-white hover:bg-gray-800/50 transition-colors"
+        className="w-full flex items-center gap-2 px-6 py-4 text-sm font-semibold text-ink-secondary hover:text-ink hover:bg-hovered transition-colors"
       >
         <svg
           className={`w-4 h-4 transition-transform ${showBreakdown ? 'rotate-90' : ''}`}
@@ -43,17 +58,15 @@ export function CalculationBreakdown({
 
       {showBreakdown && (
         <div className="px-6 pb-6">
-          {/* Formula cards grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mb-6">
             {formulas.map((f) => (
               <FormulaRow key={f.id} formula={f} />
             ))}
           </div>
 
-          {/* Monthly table toggle */}
           <button
             onClick={() => dispatch({ type: 'TOGGLE_MONTHLY_TABLE' })}
-            className="flex items-center gap-2 mb-3 text-sm font-semibold text-gray-300 hover:text-white transition-colors"
+            className="flex items-center gap-2 mb-3 text-sm font-semibold text-ink-secondary hover:text-ink transition-colors"
           >
             <svg
               className={`w-4 h-4 transition-transform ${showMonthlyTable ? 'rotate-90' : ''}`}
@@ -67,7 +80,7 @@ export function CalculationBreakdown({
           </button>
 
           {showMonthlyTable && (
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50">
+            <div className="bg-card rounded-lg p-4 border border-edge">
               <MonthlyTable
                 breakdowns={results.monthlyBreakdowns}
                 breakEvenMonth={results.breakEvenMonth}
