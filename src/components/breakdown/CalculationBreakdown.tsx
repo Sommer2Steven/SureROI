@@ -2,8 +2,7 @@
  * CalculationBreakdown.tsx
  *
  * Collapsible panel that provides full transparency into the ROI calculations.
- * For proposed scenarios, merges the current solution's baseline into the inputs
- * before generating formula displays.
+ * Each scenario is self-contained — no baseline needed.
  */
 
 import React from 'react';
@@ -14,7 +13,6 @@ import { MonthlyTable } from './MonthlyTable';
 
 interface CalculationBreakdownProps {
   scenario: ScenarioInputs;
-  currentSolution: ScenarioInputs | undefined;
   analysisPeriod: number;
   results: ScenarioResults;
   showBreakdown: boolean;
@@ -24,20 +22,13 @@ interface CalculationBreakdownProps {
 
 export function CalculationBreakdown({
   scenario,
-  currentSolution,
   analysisPeriod,
   results,
   showBreakdown,
   showMonthlyTable,
   dispatch,
 }: CalculationBreakdownProps) {
-  // For proposed scenarios, pass the baseline's currentState separately
-  const isBaseline = currentSolution && scenario.id === currentSolution.id;
-  const baselineState = !isBaseline && currentSolution
-    ? currentSolution.currentState
-    : undefined;
-
-  const formulas = getFormulaDisplays(scenario, analysisPeriod, baselineState, scenario.costBreakdownLocked);
+  const formulas = getFormulaDisplays(scenario, analysisPeriod, scenario.costBreakdownLocked);
 
   return (
     <div className="border-t border-edge">

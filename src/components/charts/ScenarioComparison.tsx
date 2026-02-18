@@ -1,8 +1,8 @@
 /**
  * ScenarioComparison.tsx
  *
- * Line chart overlaying net position of proposed scenarios only.
- * Requires at least 2 proposed scenarios.
+ * Line chart overlaying net position of all scenarios.
+ * Requires at least 2 scenarios.
  */
 
 import React from 'react';
@@ -18,7 +18,9 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { ScenarioResults } from '../../types';
-import type { CompareDataPoint } from '../../hooks/useChartData';
+
+/** Inline type — useChartData was removed; this file is dead code kept for reference */
+interface CompareDataPoint { month: number; label: string; [key: string]: number | string; }
 import { QualitativeBadges } from './QualitativeBadges';
 import { formatYAxisK, formatCurrencyK } from '../../constants/formatting';
 
@@ -54,12 +56,10 @@ function CompareTooltip({ active, payload, label }: any) {
 }
 
 export function ScenarioComparison({ data, results, darkMode }: ScenarioComparisonProps) {
-  const proposedResults = results.slice(1);
-
-  if (data.length === 0 || proposedResults.length < 2) {
+  if (data.length === 0 || results.length < 2) {
     return (
       <div className="flex items-center justify-center h-[400px] text-ink-muted">
-        <p>Add at least 2 proposed scenarios to see comparison</p>
+        <p>Add at least 2 scenarios to see comparison</p>
       </div>
     );
   }
@@ -103,7 +103,7 @@ export function ScenarioComparison({ data, results, darkMode }: ScenarioComparis
             }}
           />
 
-          {proposedResults.map((r) => (
+          {results.map((r) => (
             <Line
               key={r.scenarioId}
               type="monotone"
@@ -118,9 +118,9 @@ export function ScenarioComparison({ data, results, darkMode }: ScenarioComparis
         </LineChart>
       </ResponsiveContainer>
 
-      {/* Custom legend row with scenario swatches + break-even indicator */}
+      {/* Custom legend row */}
       <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 mt-3 text-sm">
-        {proposedResults.map((r) => (
+        {results.map((r) => (
           <div key={r.scenarioId} className="flex items-center gap-1.5">
             <span
               className="w-4 h-0.5 rounded-full inline-block"

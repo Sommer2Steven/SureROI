@@ -1,7 +1,7 @@
 /**
  * MonthlySavingsChart.tsx
  *
- * Bar chart showing month-by-month savings for proposed scenarios only.
+ * Bar chart showing month-by-month savings for all scenarios.
  */
 
 import React from 'react';
@@ -17,7 +17,9 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { ScenarioResults } from '../../types';
-import type { MonthlySavingsDataPoint } from '../../hooks/useChartData';
+
+/** Inline type — useChartData was removed; this file is dead code kept for reference */
+interface MonthlySavingsDataPoint { month: number; label: string; [key: string]: number | string; }
 import { QualitativeBadges } from './QualitativeBadges';
 import { formatYAxisK, formatCurrencyK } from '../../constants/formatting';
 
@@ -51,12 +53,10 @@ function SavingsTooltip({ active, payload, label }: any) {
 }
 
 export function MonthlySavingsChart({ data, results, darkMode }: MonthlySavingsChartProps) {
-  const proposedResults = results.slice(1);
-
-  if (data.length === 0 || proposedResults.length === 0) {
+  if (data.length === 0 || results.length === 0) {
     return (
       <div className="flex items-center justify-center h-[400px] text-ink-muted">
-        <p>Add a proposed scenario to see monthly savings</p>
+        <p>Add a scenario to see monthly savings</p>
       </div>
     );
   }
@@ -89,11 +89,11 @@ export function MonthlySavingsChart({ data, results, darkMode }: MonthlySavingsC
 
           <ReferenceLine y={0} stroke="#6B7280" />
 
-          {proposedResults.map((r) => (
+          {results.map((r) => (
             <Bar
               key={r.scenarioId}
               dataKey={`savings_${r.scenarioId}`}
-              name={proposedResults.length > 1 ? r.scenarioName : 'Monthly Savings'}
+              name={results.length > 1 ? r.scenarioName : 'Monthly Savings'}
               fill={r.color}
               opacity={0.85}
               radius={[2, 2, 0, 0]}

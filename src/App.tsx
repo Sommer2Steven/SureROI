@@ -8,7 +8,6 @@
 import React from 'react';
 import { useScenarios } from './hooks/useScenarios';
 import { useCalculations } from './hooks/useCalculations';
-import { useChartData } from './hooks/useChartData';
 import { useExportPDF } from './hooks/useExportPDF';
 import { useSaveLoad } from './hooks/useSaveLoad';
 import { usePortfolio } from './hooks/usePortfolio';
@@ -16,7 +15,6 @@ import { usePortfolioCalculations } from './hooks/usePortfolioCalculations';
 import { usePortfolioSaveLoad } from './hooks/usePortfolioSaveLoad';
 import { AppHeader } from './components/layout/AppHeader';
 import { AppLayout } from './components/layout/AppLayout';
-import { MetricsBanner } from './components/metrics/MetricsBanner';
 import { ScenarioTabs } from './components/inputs/ScenarioTabs';
 import { ScenarioPanel } from './components/inputs/ScenarioPanel';
 import { InputField } from './components/inputs/InputField';
@@ -30,8 +28,6 @@ export default function App() {
   // Run ROI calculations — returns [currentSolutionResult, ...proposedResults]
   const results = useCalculations(state.scenarios, state.analysisPeriod);
 
-  const { cumulativeData, monthlySavingsData, compareData } = useChartData(results);
-
   const { saveProject, loadProject } = useSaveLoad({ state, dispatch });
 
   const { exportPDF, isExporting } = useExportPDF({
@@ -40,8 +36,6 @@ export default function App() {
     scenarios: state.scenarios,
     results,
     analysisPeriod: state.analysisPeriod,
-    chartView: state.chartView,
-    dispatch,
   });
 
   // Portfolio hooks
@@ -57,8 +51,6 @@ export default function App() {
 
   const activeScenario = state.scenarios.find((s) => s.id === state.activeScenarioId);
   const activeResults = results.find((r) => r.scenarioId === state.activeScenarioId);
-
-  const currentSolution = state.scenarios[0];
 
   const breakdownScenario = activeScenario ?? state.scenarios[0];
   const breakdownResults = activeResults ?? results[0];
@@ -85,22 +77,33 @@ export default function App() {
 
       {state.appMode === 'project' ? (
         <>
-          <MetricsBanner results={results} />
-
           <AppLayout
             sidebarCollapsed={state.sidebarCollapsed}
             sidebar={
               <>
                 <div className="px-3 pt-3 pb-1 border-b border-edge">
-                  <InputField
-                    label="Analysis Period"
-                    value={state.analysisPeriod}
-                    onChange={(v) => dispatch({ type: 'UPDATE_ANALYSIS_PERIOD', period: v })}
-                    min={6}
-                    max={60}
-                    step={6}
-                    suffix="mo"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <InputField
+                      label="Analysis Period"
+                      value={state.analysisPeriod}
+                      onChange={(v) => dispatch({ type: 'UPDATE_ANALYSIS_PERIOD', period: v })}
+                      min={6}
+                      max={60}
+                      step={6}
+                      suffix="mo"
+                    />
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Reset all inputs to defaults?')) {
+                          dispatch({ type: 'RESET_PROJECT' });
+                        }
+                      }}
+                      className="shrink-0 ml-2 px-2 py-1 text-xs text-ink-muted hover:text-ink-negative hover:bg-hovered rounded transition-colors"
+                      title="Reset all inputs to defaults"
+                    >
+                      Clear All
+                    </button>
+                  </div>
                 </div>
                 <ScenarioTabs
                   scenarios={state.scenarios}
@@ -111,7 +114,6 @@ export default function App() {
                   {activeScenario ? (
                     <ScenarioPanel
                       scenario={activeScenario}
-                      isBaseline={activeScenario.id === state.scenarios[0]?.id}
                       dispatch={dispatch}
                     />
                   ) : null}
@@ -120,12 +122,8 @@ export default function App() {
             }
             main={
               <ChartContainer
-                chartView={state.chartView}
-                dispatch={dispatch}
                 results={results}
-                cumulativeData={cumulativeData}
-                monthlySavingsData={monthlySavingsData}
-                compareData={compareData}
+                scenarios={state.scenarios}
                 darkMode={state.darkMode}
               />
             }
@@ -133,7 +131,6 @@ export default function App() {
               breakdownScenario && breakdownResults ? (
                 <CalculationBreakdown
                   scenario={breakdownScenario}
-                  currentSolution={currentSolution}
                   analysisPeriod={state.analysisPeriod}
                   results={breakdownResults}
                   showBreakdown={state.showBreakdown}

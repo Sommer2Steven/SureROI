@@ -19,7 +19,6 @@ const initialState: AppState = {
   scenarios: [firstScenario],
   activeScenarioId: firstScenario.id,
   analysisPeriod: 36,
-  chartView: 'cumulative',
   showBreakdown: false,
   showMonthlyTable: false,
   projectTitle: '',
@@ -65,12 +64,12 @@ function reducer(state: AppState, action: AppAction): AppState {
       };
     }
 
-    case 'UPDATE_CURRENT_STATE': {
+    case 'UPDATE_SAVINGS': {
       return {
         ...state,
         scenarios: state.scenarios.map((s) =>
           s.id === action.id
-            ? { ...s, currentState: { ...s.currentState, ...action.updates } }
+            ? { ...s, savings: { ...s.savings, ...action.updates } }
             : s
         ),
       };
@@ -82,17 +81,6 @@ function reducer(state: AppState, action: AppAction): AppState {
         scenarios: state.scenarios.map((s) =>
           s.id === action.id
             ? { ...s, investment: { ...s.investment, ...action.updates } }
-            : s
-        ),
-      };
-    }
-
-    case 'UPDATE_EFFICIENCY': {
-      return {
-        ...state,
-        scenarios: state.scenarios.map((s) =>
-          s.id === action.id
-            ? { ...s, efficiency: { ...s.efficiency, ...action.updates } }
             : s
         ),
       };
@@ -145,10 +133,6 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, activeScenarioId: action.id };
     }
 
-    case 'SET_CHART_VIEW': {
-      return { ...state, chartView: action.view };
-    }
-
     case 'TOGGLE_BREAKDOWN': {
       return { ...state, showBreakdown: !state.showBreakdown };
     }
@@ -177,6 +161,18 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, appMode: action.mode };
     }
 
+    case 'RESET_PROJECT': {
+      const fresh = createDefaultScenario(0);
+      return {
+        ...initialState,
+        darkMode: state.darkMode,
+        sidebarCollapsed: state.sidebarCollapsed,
+        appMode: state.appMode,
+        scenarios: [fresh],
+        activeScenarioId: fresh.id,
+      };
+    }
+
     case 'LOAD_PROJECT': {
       const p = action.project;
       return {
@@ -188,7 +184,6 @@ function reducer(state: AppState, action: AppAction): AppState {
         scenarios: p.scenarios,
         activeScenarioId: p.scenarios[0]?.id ?? state.activeScenarioId,
         // Reset transient UI state
-        chartView: 'cumulative',
         showBreakdown: false,
         showMonthlyTable: false,
         sidebarCollapsed: false,

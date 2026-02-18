@@ -1,7 +1,7 @@
 /**
  * QualitativeBadges.tsx
  *
- * Renders a row of colored pills per proposed scenario showing which
+ * Renders a row of colored pills per scenario showing which
  * qualitative flags are active. Displayed under chart titles.
  */
 
@@ -19,11 +19,8 @@ interface QualitativeBadgesProps {
 }
 
 export function QualitativeBadges({ results }: QualitativeBadgesProps) {
-  // Only show for proposed scenarios (skip results[0] = baseline)
-  const proposed = results.slice(1);
-
-  // Check if any proposed scenario has any flag active
-  const hasAnyFlag = proposed.some((r) =>
+  // Check if any scenario has any flag active
+  const hasAnyFlag = results.some((r) =>
     FLAG_ICONS.some((f) => r.qualitative[f.key])
   );
 
@@ -31,7 +28,7 @@ export function QualitativeBadges({ results }: QualitativeBadgesProps) {
 
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 px-1 mb-2">
-      {proposed.map((r) => {
+      {results.map((r) => {
         const activeFlags = FLAG_ICONS.filter((f) => r.qualitative[f.key]);
         if (activeFlags.length === 0) return null;
 
@@ -42,7 +39,7 @@ export function QualitativeBadges({ results }: QualitativeBadgesProps) {
               style={{ backgroundColor: r.color }}
             />
             <span className="text-xs text-ink-muted mr-0.5">
-              {proposed.length > 1 ? r.scenarioName : ''}
+              {results.length > 1 ? r.scenarioName : ''}
             </span>
             {activeFlags.map((f) => (
               <span

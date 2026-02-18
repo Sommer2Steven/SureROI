@@ -1,39 +1,114 @@
 /**
  * InputField.tsx
  *
- * A reusable numeric input component with optional prefix/suffix adornments
+ * A reusable input component with optional prefix/suffix adornments
  * (e.g., "$" prefix for currency, "mo" suffix for months). Used throughout
- * the input panels wherever the user needs to enter a raw number.
+ * the input panels wherever the user needs to enter a raw number or short text.
  *
- * The component renders a label on the left and a styled numeric input on
+ * The component renders a label on the left and a styled input on
  * the right, keeping the layout consistent across all input rows.
  */
 
 import React, { useState, useEffect } from 'react';
 
-interface InputFieldProps {
+interface InputFieldPropsBase {
   label: string;
-  value: number;
-  onChange: (value: number) => void;
   /** Text shown before the input value, e.g. "$" */
   prefix?: string;
   /** Text shown after the input value, e.g. "mo" */
   suffix?: string;
+}
+
+interface NumericInputFieldProps extends InputFieldPropsBase {
+  value: number;
+  onChange: (value: number) => void;
   min?: number;
   max?: number;
   step?: number;
+  isText?: false;
 }
 
-export function InputField({
+interface TextInputFieldProps extends InputFieldPropsBase {
+  value: string;
+  onChange: (value: string) => void;
+  isText: true;
+  min?: never;
+  max?: never;
+  step?: never;
+}
+
+type InputFieldProps = NumericInputFieldProps | TextInputFieldProps;
+
+export function InputField(props: InputFieldProps) {
+  const { label, prefix, suffix } = props;
+
+  if (props.isText) {
+    return <TextInput label={label} prefix={prefix} suffix={suffix} value={props.value} onChange={props.onChange} />;
+  }
+
+  return (
+    <NumericInput
+      label={label}
+      prefix={prefix}
+      suffix={suffix}
+      value={props.value}
+      onChange={props.onChange}
+      min={props.min}
+      max={props.max}
+      step={props.step}
+    />
+  );
+}
+
+function TextInput({
   label,
-  value,
-  onChange,
   prefix,
   suffix,
+  value,
+  onChange,
+}: {
+  label: string;
+  prefix?: string;
+  suffix?: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 py-1.5">
+      <label className="text-sm text-ink-secondary shrink-0">{label}</label>
+      <div className="flex items-center gap-1 bg-field rounded-md px-2 py-1.5 w-32">
+        {prefix && <span className="text-ink-muted text-sm">{prefix}</span>}
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full bg-transparent text-ink text-sm text-right outline-none"
+        />
+        {suffix && <span className="text-ink-muted text-sm">{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+function NumericInput({
+  label,
+  prefix,
+  suffix,
+  value,
+  onChange,
   min = 0,
   max,
   step = 1,
-}: InputFieldProps) {
+}: {
+  label: string;
+  prefix?: string;
+  suffix?: string;
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+}) {
   // Local string state lets the user type freely (e.g. "1" on the way to "12")
   // without the value getting clamped mid-keystroke.
   const [localValue, setLocalValue] = useState(String(value));
@@ -91,8 +166,6 @@ export function InputField({
           min={min}
           max={max}
           step={step}
-          // The long className hides the browser-native spinner arrows on
-          // both WebKit (Chrome/Safari) and Firefox so the input stays minimal.
           className="w-full bg-transparent text-ink text-sm text-right outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         />
         {suffix && <span className="text-ink-muted text-sm">{suffix}</span>}

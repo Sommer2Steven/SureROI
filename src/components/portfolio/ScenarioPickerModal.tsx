@@ -3,13 +3,13 @@
  *
  * Multi-step modal for adding a project entry to the portfolio:
  * 1. Load a project file via file picker
- * 2. Select one proposed scenario from the project
- * 3. Fill in deployment details (name, start/end month, estimated hours)
+ * 2. Select a scenario from the project
+ * 3. Fill in deployment details (name, dates, actual units, tool count, exclusions)
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import type { ProjectFile, ScenarioInputs, PortfolioEntry } from '../../types';
-import { isValidProjectFile } from '../../utils/projectFileValidation';
+import type { ProjectFile, PortfolioEntry } from '../../types';
+import { isValidProjectFile, loadAndMigrateProject } from '../../utils/projectFileValidation';
 import { currentMonthKey, addMonths, monthsBetween, formatMonthLabel } from '../../utils/calendarUtils';
 
 interface ScenarioPickerModalProps {
@@ -29,7 +29,10 @@ export function ScenarioPickerModal({ open, onClose, onConfirm }: ScenarioPicker
   const [projectName, setProjectName] = useState('');
   const [startMonth, setStartMonth] = useState('');
   const [endMonth, setEndMonth] = useState('');
-  const [estimatedHours, setEstimatedHours] = useState(0);
+  const [actualUnits, setActualUnits] = useState(0);
+  const [toolCount, setToolCount] = useState(1);
+  const [excludeDesignControls, setExcludeDesignControls] = useState(false);
+  const [excludeTraining, setExcludeTraining] = useState(false);
 
   // Reset state when modal opens/closes
   useEffect(() => {
@@ -40,7 +43,10 @@ export function ScenarioPickerModal({ open, onClose, onConfirm }: ScenarioPicker
       setProjectName('');
       setStartMonth('');
       setEndMonth('');
-      setEstimatedHours(0);
+      setActualUnits(0);
+      setToolCount(1);
+      setExcludeDesignControls(false);
+      setExcludeTraining(false);
     }
   }, [open]);
 
@@ -51,7 +57,15 @@ export function ScenarioPickerModal({ open, onClose, onConfirm }: ScenarioPicker
     const start = currentMonthKey();
     setStartMonth(start);
     setEndMonth(addMonths(start, Math.max(0, project.analysisPeriod - 1)));
-    setEstimatedHours(0);
+
+    // Default actual units from the scenario's reference units
+    const scenario = project.scenarios.find((s) => s.id === selectedId);
+    if (scenario) {
+      setActualUnits(scenario.savings.referenceUnits);
+    }
+    setToolCount(1);
+    setExcludeDesignControls(false);
+    setExcludeTraining(false);
   }, [project, selectedId]);
 
   // Close on Escape
@@ -86,13 +100,8 @@ export function ScenarioPickerModal({ open, onClose, onConfirm }: ScenarioPicker
             return;
           }
 
-          // Backfill costBreakdownLocked
-          const scenarios = parsed.scenarios.map((s: ScenarioInputs) => ({
-            ...s,
-            costBreakdownLocked: s.costBreakdownLocked ?? false,
-          }));
-
-          setProject({ ...parsed, scenarios });
+          const migrated = loadAndMigrateProject(parsed);
+          setProject(migrated);
           setFileName(file.name);
           setSelectedId(null);
         } catch {
@@ -112,7 +121,8 @@ export function ScenarioPickerModal({ open, onClose, onConfirm }: ScenarioPicker
     startMonth &&
     endMonth &&
     monthsBetween(startMonth, endMonth) > 0 &&
-    estimatedHours >= 0,
+    actualUnits >= 0 &&
+    toolCount >= 1,
   );
 
   const handleConfirm = useCallback(() => {
@@ -126,24 +136,27 @@ export function ScenarioPickerModal({ open, onClose, onConfirm }: ScenarioPicker
       id: `portfolio-entry-${Date.now()}-${entryCounter}`,
       projectName: projectName.trim(),
       scenarioName: scenario.name,
-      estimatedHours,
-      excludeDesignControls: false,
+      actualUnits,
+      toolCount,
+      excludeDesignControls,
+      excludeTraining,
       startMonth,
       endMonth,
       scenario,
-      baselineCurrentState: project.scenarios[0].currentState,
+      baselineSavings: scenario.savings,
       analysisPeriod: project.analysisPeriod,
       sourceFileName: fileName,
     };
 
     onConfirm(entry);
     onClose();
-  }, [project, selectedId, projectName, estimatedHours, startMonth, endMonth, fileName, isValid, onConfirm, onClose]);
+  }, [project, selectedId, projectName, actualUnits, toolCount, excludeDesignControls, excludeTraining, startMonth, endMonth, fileName, isValid, onConfirm, onClose]);
 
   if (!open) return null;
 
-  const proposedScenarios = project ? project.scenarios.slice(1) : [];
   const duration = startMonth && endMonth ? monthsBetween(startMonth, endMonth) : 0;
+  const selectedScenario = project?.scenarios.find((s) => s.id === selectedId);
+  const unitName = selectedScenario?.savings.unitName ?? 'unit';
 
   return (
     <div
@@ -191,31 +204,17 @@ export function ScenarioPickerModal({ open, onClose, onConfirm }: ScenarioPicker
                 </p>
               </div>
 
-              {/* Baseline indicator */}
-              <div className="mb-3 px-3 py-2 rounded-lg bg-field border border-edge">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="w-3 h-3 rounded-full shrink-0"
-                    style={{ backgroundColor: project.scenarios[0].color }}
-                  />
-                  <span className="text-sm text-ink-secondary">
-                    {project.scenarios[0].name}
-                  </span>
-                  <span className="text-xs text-ink-muted ml-auto">Baseline</span>
-                </div>
-              </div>
-
-              {/* Proposed scenarios */}
-              {proposedScenarios.length === 0 ? (
+              {/* Scenario list */}
+              {project.scenarios.length === 0 ? (
                 <p className="text-sm text-ink-muted text-center py-4">
-                  This project has no proposed scenarios.
+                  This project has no scenarios.
                 </p>
               ) : (
                 <div className="space-y-2">
                   <p className="text-xs text-ink-muted uppercase tracking-wider font-medium">
-                    Select a proposed scenario
+                    Select a scenario
                   </p>
-                  {proposedScenarios.map((s) => (
+                  {project.scenarios.map((s) => (
                     <button
                       key={s.id}
                       onClick={() => setSelectedId(s.id)}
@@ -231,13 +230,16 @@ export function ScenarioPickerModal({ open, onClose, onConfirm }: ScenarioPicker
                           style={{ backgroundColor: s.color }}
                         />
                         <span className="text-sm text-ink font-medium">{s.name}</span>
+                        <span className="text-xs text-ink-muted ml-auto">
+                          {s.savings.mode === 'direct' ? 'Direct' : 'Time-Based'}
+                        </span>
                       </div>
                     </button>
                   ))}
                 </div>
               )}
 
-              {/* Deployment Details — shown after scenario is selected */}
+              {/* Deployment Details */}
               {selectedId && (
                 <div className="mt-4 pt-4 border-t border-edge">
                   <p className="text-xs text-ink-muted uppercase tracking-wider font-medium mb-3">
@@ -295,18 +297,62 @@ export function ScenarioPickerModal({ open, onClose, onConfirm }: ScenarioPicker
                       </p>
                     )}
 
-                    {/* Estimated Hours */}
+                    {/* Actual Units */}
                     <div>
                       <label className="block text-xs font-medium text-ink-secondary mb-1">
-                        Estimated Hours
+                        Actual {unitName}s
                       </label>
                       <input
                         type="number"
                         min={0}
-                        value={estimatedHours}
-                        onChange={(e) => setEstimatedHours(Math.max(0, Number(e.target.value) || 0))}
+                        value={actualUnits}
+                        onChange={(e) => setActualUnits(Math.max(0, Number(e.target.value) || 0))}
+                        onFocus={(e) => e.target.select()}
                         className="w-full px-3 py-1.5 rounded-md border border-edge bg-field text-sm text-ink focus:border-blue-500 focus:outline-none"
                       />
+                      <p className="text-xs text-ink-muted mt-0.5">
+                        How many {unitName}s does this deployment affect?
+                      </p>
+                    </div>
+
+                    {/* Tool Count */}
+                    <div>
+                      <label className="block text-xs font-medium text-ink-secondary mb-1">
+                        Tool Count
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={toolCount}
+                        onChange={(e) => setToolCount(Math.max(1, Number(e.target.value) || 1))}
+                        onFocus={(e) => e.target.select()}
+                        className="w-full px-3 py-1.5 rounded-md border border-edge bg-field text-sm text-ink focus:border-blue-500 focus:outline-none"
+                      />
+                      <p className="text-xs text-ink-muted mt-0.5">
+                        How many tool instances to buy?
+                      </p>
+                    </div>
+
+                    {/* Exclusion checkboxes */}
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={excludeDesignControls}
+                          onChange={(e) => setExcludeDesignControls(e.target.checked)}
+                          className="rounded border-edge"
+                        />
+                        <span className="text-sm text-ink-secondary">Exclude Design & Controls</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={excludeTraining}
+                          onChange={(e) => setExcludeTraining(e.target.checked)}
+                          className="rounded border-edge"
+                        />
+                        <span className="text-sm text-ink-secondary">Exclude Training</span>
+                      </label>
                     </div>
                   </div>
                 </div>

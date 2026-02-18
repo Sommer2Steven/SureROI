@@ -3,11 +3,12 @@
  *
  * Save current project state to a .json file and load it back via file picker.
  * Validates the JSON schema before dispatching to prevent corrupted state.
+ * Saves as version 2; loads both v1 and v2 (v1 is auto-migrated).
  */
 
 import { useCallback } from 'react';
 import type { AppState, AppAction, ProjectFile } from '../types';
-import { isValidProjectFile } from '../utils/projectFileValidation';
+import { isValidProjectFile, loadAndMigrateProject } from '../utils/projectFileValidation';
 
 interface UseSaveLoadParams {
   state: AppState;
@@ -17,7 +18,7 @@ interface UseSaveLoadParams {
 export function useSaveLoad({ state, dispatch }: UseSaveLoadParams) {
   const saveProject = useCallback(() => {
     const projectFile: ProjectFile = {
-      version: 1,
+      version: 2,
       projectTitle: state.projectTitle,
       projectDescription: state.projectDescription,
       analysisPeriod: state.analysisPeriod,
@@ -60,13 +61,8 @@ export function useSaveLoad({ state, dispatch }: UseSaveLoadParams) {
             return;
           }
 
-          // Backfill costBreakdownLocked for files saved before this field existed
-          const scenarios = parsed.scenarios.map((s) => ({
-            ...s,
-            costBreakdownLocked: s.costBreakdownLocked ?? false,
-          }));
-
-          dispatch({ type: 'LOAD_PROJECT', project: { ...parsed, scenarios } });
+          const project = loadAndMigrateProject(parsed);
+          dispatch({ type: 'LOAD_PROJECT', project });
         } catch {
           alert('Failed to parse the project file. Please check the file format.');
         }

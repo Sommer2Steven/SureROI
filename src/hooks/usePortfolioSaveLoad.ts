@@ -2,12 +2,14 @@
  * hooks/usePortfolioSaveLoad.ts
  *
  * Save/load portfolio state to/from JSON files.
- * Same Blob download / FileReader pattern as useSaveLoad.ts.
+ * Handles backward compatibility with v1 portfolio entries
+ * (estimatedHours → actualUnits, baselineCurrentState → baselineSavings).
  */
 
 import { useCallback } from 'react';
-import type { PortfolioState, PortfolioAction, PortfolioFile } from '../types';
+import type { PortfolioState, PortfolioAction, PortfolioFile, SavingsInputs } from '../types';
 import { isValidScenario } from '../utils/projectFileValidation';
+import { DEFAULT_SAVINGS } from '../constants/defaults';
 import { currentMonthKey, addMonths } from '../utils/calendarUtils';
 
 const MONTH_KEY_RE = /^\d{4}-\d{2}$/;
@@ -20,30 +22,78 @@ interface UsePortfolioSaveLoadParams {
 function isValidPortfolioEntry(e: unknown): boolean {
   if (typeof e !== 'object' || e === null) return false;
   const obj = e as Record<string, unknown>;
-  return (
-    typeof obj.id === 'string' &&
-    typeof obj.projectName === 'string' &&
-    typeof obj.scenarioName === 'string' &&
-    typeof obj.estimatedHours === 'number' &&
-    typeof obj.excludeDesignControls === 'boolean' &&
-    typeof obj.analysisPeriod === 'number' &&
-    typeof obj.sourceFileName === 'string' &&
-    isValidScenario(obj.scenario) &&
-    typeof obj.baselineCurrentState === 'object' && obj.baselineCurrentState !== null &&
-    // startMonth/endMonth are optional for backcompat — validated below
-    (obj.startMonth === undefined || (typeof obj.startMonth === 'string' && MONTH_KEY_RE.test(obj.startMonth))) &&
-    (obj.endMonth === undefined || (typeof obj.endMonth === 'string' && MONTH_KEY_RE.test(obj.endMonth)))
-  );
+
+  // Required fields
+  if (typeof obj.id !== 'string') return false;
+  if (typeof obj.projectName !== 'string') return false;
+  if (typeof obj.scenarioName !== 'string') return false;
+  if (typeof obj.analysisPeriod !== 'number') return false;
+  if (typeof obj.sourceFileName !== 'string') return false;
+  if (!isValidScenario(obj.scenario)) return false;
+
+  // v2 fields (optional for backcompat — will be migrated)
+  // actualUnits, toolCount, excludeDesignControls, excludeTraining, baselineSavings
+
+  // Start/end month validation
+  if (obj.startMonth !== undefined && (typeof obj.startMonth !== 'string' || !MONTH_KEY_RE.test(obj.startMonth))) return false;
+  if (obj.endMonth !== undefined && (typeof obj.endMonth !== 'string' || !MONTH_KEY_RE.test(obj.endMonth))) return false;
+
+  return true;
 }
 
-/** Backfill old entries missing startMonth/endMonth with sensible defaults. */
-function backfillEntry(entry: Record<string, unknown>): void {
+/** Migrate old v1 entries to v2 format. */
+function migrateEntry(entry: Record<string, unknown>): void {
+  // Backfill startMonth/endMonth
   if (!entry.startMonth || typeof entry.startMonth !== 'string') {
     entry.startMonth = currentMonthKey();
   }
   if (!entry.endMonth || typeof entry.endMonth !== 'string') {
     const period = typeof entry.analysisPeriod === 'number' ? entry.analysisPeriod : 36;
     entry.endMonth = addMonths(entry.startMonth as string, Math.max(0, period - 1));
+  }
+
+  // Migrate estimatedHours → actualUnits + toolCount
+  if (typeof entry.estimatedHours === 'number' && entry.actualUnits === undefined) {
+    entry.actualUnits = entry.estimatedHours;
+    entry.toolCount = 1;
+    delete entry.estimatedHours;
+  }
+
+  // Default actualUnits and toolCount
+  if (typeof entry.actualUnits !== 'number') entry.actualUnits = 0;
+  if (typeof entry.toolCount !== 'number') entry.toolCount = 1;
+
+  // Default excludeDesignControls and excludeTraining
+  if (typeof entry.excludeDesignControls !== 'boolean') entry.excludeDesignControls = false;
+  if (typeof entry.excludeTraining !== 'boolean') entry.excludeTraining = false;
+
+  // Migrate baselineCurrentState → baselineSavings
+  if (entry.baselineCurrentState !== undefined && entry.baselineSavings === undefined) {
+    const baseline = entry.baselineCurrentState as Record<string, unknown>;
+    // Convert old baseline to savings format
+    const savings: SavingsInputs = {
+      ...DEFAULT_SAVINGS,
+      mode: 'time-based',
+      unitName: 'hour-block',
+      referenceUnits: (baseline.workers as number) || 0,
+      currentCrewSize: (baseline.workers as number) || 0,
+      proposedCrewSize: (baseline.workers as number) || 0,
+      currentTimePerUnit: ((baseline.hoursPerWeek as number) || 0) / 5 * 60,
+      proposedTimePerUnit: ((baseline.hoursPerWeek as number) || 0) / 5 * 60,
+      hourlyRate: (baseline.hourlyRate as number) || 0,
+    };
+    entry.baselineSavings = savings;
+    delete entry.baselineCurrentState;
+  }
+
+  // Default baselineSavings from scenario
+  if (!entry.baselineSavings && entry.scenario) {
+    const scenario = entry.scenario as Record<string, unknown>;
+    if (scenario.savings) {
+      entry.baselineSavings = scenario.savings;
+    } else {
+      entry.baselineSavings = { ...DEFAULT_SAVINGS };
+    }
   }
 }
 
@@ -108,9 +158,9 @@ export function usePortfolioSaveLoad({
             return;
           }
 
-          // Backfill startMonth/endMonth for entries saved before calendar timeline feature
+          // Migrate entries to v2 format
           for (const entry of parsed.entries) {
-            backfillEntry(entry as unknown as Record<string, unknown>);
+            migrateEntry(entry as unknown as Record<string, unknown>);
           }
 
           portfolioDispatch({ type: 'LOAD_PORTFOLIO', portfolio: parsed });

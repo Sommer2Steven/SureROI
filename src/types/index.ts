@@ -6,16 +6,32 @@
  * the rest of the codebase imports from a single source of truth.
  */
 
-// ── Status Quo (baseline) inputs ────────────────────────────────────────
-// These describe the company's current field operations BEFORE any new tool.
-// Each scenario has its own baseline so different "what-if" options can
-// compare against different starting points.
-export interface CurrentStateInputs {
-  workers: number;
+// ── Savings mode ────────────────────────────────────────────────────────
+export type SavingsMode = 'direct' | 'time-based';
+
+// ── Savings inputs (replaces CurrentStateInputs + EfficiencyInputs) ─────
+// Two modes:
+//   - Direct: user enters a flat $/unit/month savings rate
+//   - Time-Based: derives savings from crew/time before-after comparison
+export interface SavingsInputs {
+  mode: SavingsMode;
+  unitName: string;              // "person", "piece", "ton", etc.
+  referenceUnits: number;        // for project-level charts/break-even
+
+  // ── Direct mode ──
+  directSavingsPerUnit: number;  // $/unit/month
+
+  // ── Time-based mode ──
+  currentCrewSize: number;
+  proposedCrewSize: number;
+  currentTimePerUnit: number;    // minutes
+  proposedTimePerUnit: number;   // minutes
   hourlyRate: number;
-  hoursPerWeek: number;
-  errorRate: number;
-  monthlyOperationalCosts: number;
+
+  // ── Common to both modes ──
+  additionalSavingsPerUnit: number; // $/unit/month (materials, rework, etc.)
+  utilizationPercent: number;       // 0-1
+  adoptionRampMonths: number;       // 1-24
 }
 
 // ── New tool investment inputs ──────────────────────────────────────────
@@ -29,15 +45,6 @@ export interface InvestmentInputs {
   toolLifespanMonths: number;
 }
 
-// ── Efficiency gain inputs ──────────────────────────────────────────────
-export interface EfficiencyInputs {
-  timeSavings: number;
-  errorReduction: number;
-  utilizationPercent: number;
-  adoptionRampMonths: number;
-  additionalMonthlyRevenue: number;
-}
-
 // ── Qualitative flags ───────────────────────────────────────────────────
 // Non-numeric indicators that help stakeholders assess strategic value.
 export interface QualitativeFlags {
@@ -48,15 +55,13 @@ export interface QualitativeFlags {
 
 // ── Scenario ────────────────────────────────────────────────────────────
 // A scenario represents one "what if" option (e.g. "Build custom" vs. "Buy SaaS").
-// Each scenario now contains its own current-state baseline, analysis period,
-// investment, efficiency, and qualitative flags.
+// Each scenario contains its own savings definition, investment, and qualitative flags.
 export interface ScenarioInputs {
   id: string;
   name: string;
   color: string;
-  currentState: CurrentStateInputs;
+  savings: SavingsInputs;
   investment: InvestmentInputs;
-  efficiency: EfficiencyInputs;
   qualitative: QualitativeFlags;
   costBreakdownLocked: boolean;
 }
@@ -65,18 +70,11 @@ export interface ScenarioInputs {
 export interface MonthlyBreakdown {
   month: number;
   adoptionRate: number;
-  currentLabor: number;
-  currentRework: number;
-  currentTotal: number;
-  newLabor: number;
-  newRework: number;
-  newTotal: number;
-  monthlySavings: number;
-  cumulativeStatusQuo: number;
-  cumulativeNewTool: number;
-  cumulativeInvestment: number;
+  monthlySavings: number;         // savingsPerUnit x units x effectiveAdoption
+  monthlyInvestmentCost: number;  // recurring + redeployment this month
   cumulativeSavings: number;
-  netPosition: number;
+  cumulativeInvestment: number;
+  netPosition: number;            // cumulativeSavings - cumulativeInvestment
 }
 
 // ── Scenario results (output of the calculation engine) ─────────────────
@@ -90,7 +88,8 @@ export interface ScenarioResults {
   year1ROI: number;
   threeYearNetSavings: number;
   totalInvestment: number;
-  monthlySavingsAtFullAdoption: number;
+  savingsPerUnit: number;                 // computed total $/unit/month (at full adoption)
+  monthlySavingsAtFullAdoption: number;   // savingsPerUnit x referenceUnits x utilization
 }
 
 // ── Formula display (for the "Show the Math" panel) ─────────────────────
@@ -104,7 +103,7 @@ export interface FormulaDisplay {
 
 // ── Saved project file format ───────────────────────────────────────────
 export interface ProjectFile {
-  version: 1;
+  version: 1 | 2;
   projectTitle: string;
   projectDescription: string;
   analysisPeriod: number;
@@ -120,12 +119,15 @@ export interface PortfolioEntry {
   id: string;
   projectName: string;
   scenarioName: string;
-  estimatedHours: number;
+  actualUnits: number;
+  toolCount: number;
   excludeDesignControls: boolean;
+  excludeTraining: boolean;
+  hidden?: boolean;
   startMonth: string;   // "YYYY-MM"
   endMonth: string;     // "YYYY-MM"
   scenario: ScenarioInputs;
-  baselineCurrentState: CurrentStateInputs;
+  baselineSavings: SavingsInputs;
   analysisPeriod: number;
   sourceFileName: string;
 }
@@ -150,22 +152,18 @@ export interface PortfolioState {
 export type PortfolioAction =
   | { type: 'ADD_ENTRY'; entry: PortfolioEntry }
   | { type: 'REMOVE_ENTRY'; id: string }
-  | { type: 'UPDATE_ENTRY'; id: string; updates: Partial<Pick<PortfolioEntry, 'estimatedHours' | 'startMonth' | 'endMonth' | 'projectName' | 'excludeDesignControls'>> }
+  | { type: 'UPDATE_ENTRY'; id: string; updates: Partial<Pick<PortfolioEntry, 'actualUnits' | 'toolCount' | 'startMonth' | 'endMonth' | 'projectName' | 'excludeDesignControls' | 'excludeTraining' | 'hidden'>> }
   | { type: 'SET_DEPARTMENT_SALARY'; salary: number }
   | { type: 'SET_PORTFOLIO_NAME'; name: string }
   | { type: 'SET_PORTFOLIO_DESCRIPTION'; description: string }
   | { type: 'LOAD_PORTFOLIO'; portfolio: PortfolioFile }
   | { type: 'RESET_PORTFOLIO' };
 
-// ── UI state types ──────────────────────────────────────────────────────
-export type ChartView = 'cumulative' | 'monthly' | 'compare';
-
 // ── Global application state ────────────────────────────────────────────
 export interface AppState {
   scenarios: ScenarioInputs[];
   activeScenarioId: string;
   analysisPeriod: number;
-  chartView: ChartView;
   showBreakdown: boolean;
   showMonthlyTable: boolean;
   projectTitle: string;
@@ -180,15 +178,13 @@ export type AppAction =
   | { type: 'ADD_SCENARIO' }
   | { type: 'REMOVE_SCENARIO'; id: string }
   | { type: 'UPDATE_SCENARIO'; id: string; updates: Partial<ScenarioInputs> }
-  | { type: 'UPDATE_CURRENT_STATE'; id: string; updates: Partial<CurrentStateInputs> }
+  | { type: 'UPDATE_SAVINGS'; id: string; updates: Partial<SavingsInputs> }
   | { type: 'UPDATE_INVESTMENT'; id: string; updates: Partial<InvestmentInputs> }
-  | { type: 'UPDATE_EFFICIENCY'; id: string; updates: Partial<EfficiencyInputs> }
   | { type: 'UPDATE_ANALYSIS_PERIOD'; period: number }
   | { type: 'UPDATE_QUALITATIVE'; id: string; updates: Partial<QualitativeFlags> }
   | { type: 'RENAME_SCENARIO'; id: string; name: string }
   | { type: 'DUPLICATE_SCENARIO'; id: string }
   | { type: 'SET_ACTIVE'; id: string }
-  | { type: 'SET_CHART_VIEW'; view: ChartView }
   | { type: 'TOGGLE_BREAKDOWN' }
   | { type: 'TOGGLE_MONTHLY_TABLE' }
   | { type: 'SET_PROJECT_TITLE'; title: string }
@@ -196,4 +192,5 @@ export type AppAction =
   | { type: 'TOGGLE_SIDEBAR' }
   | { type: 'TOGGLE_DARK_MODE' }
   | { type: 'LOAD_PROJECT'; project: ProjectFile }
-  | { type: 'SET_APP_MODE'; mode: AppMode };
+  | { type: 'SET_APP_MODE'; mode: AppMode }
+  | { type: 'RESET_PROJECT' };

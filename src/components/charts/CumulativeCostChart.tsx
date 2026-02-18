@@ -1,9 +1,9 @@
 /**
  * CumulativeCostChart.tsx
  *
- * Plots cumulative cost over time.
- * ONE red Status Quo line (from current solution) + colored lines per proposed scenario.
- * Each proposed scenario gets its own color-matched break-even reference line.
+ * Plots cumulative savings vs cumulative investment over time for each scenario.
+ * Each scenario gets a solid line for savings and a dashed line for investment.
+ * Break-even reference lines are color-matched per scenario.
  */
 
 import React from 'react';
@@ -19,7 +19,9 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { ScenarioResults } from '../../types';
-import type { CumulativeDataPoint } from '../../hooks/useChartData';
+
+/** Inline type — useChartData was removed; this file is dead code kept for reference */
+interface CumulativeDataPoint { month: number; label: string; [key: string]: number | string; }
 import { ChartTooltip } from './ChartTooltip';
 import { QualitativeBadges } from './QualitativeBadges';
 import { formatYAxisK } from '../../constants/formatting';
@@ -33,14 +35,13 @@ interface CumulativeCostChartProps {
 export function CumulativeCostChart({ data, results, darkMode }: CumulativeCostChartProps) {
   if (data.length === 0) return null;
 
-  const proposedResults = results.slice(1);
   const gridColor = darkMode ? '#334155' : '#e2e8f0';
   const axisColor = darkMode ? '#9ca3af' : '#64748b';
 
   return (
     <div>
       <h3 className="text-base font-semibold text-ink-secondary mb-3 px-1">
-        Cumulative Cost Over Time
+        Cumulative Savings vs Investment
       </h3>
       <QualitativeBadges results={results} />
       <ResponsiveContainer width="100%" height={400}>
@@ -60,33 +61,33 @@ export function CumulativeCostChart({ data, results, darkMode }: CumulativeCostC
           <Tooltip content={<ChartTooltip />} />
           <Legend wrapperStyle={{ paddingTop: 10, fontSize: 14 }} />
 
-          {/* Single red Status Quo line from current solution */}
-          <Line
-            type="monotone"
-            dataKey="statusQuo"
-            name="Status Quo"
-            stroke="#DC2626"
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4 }}
-          />
-
-          {/* Proposed scenario lines */}
-          {proposedResults.map((r) => (
-            <Line
-              key={r.scenarioId}
-              type="monotone"
-              dataKey={`newTool_${r.scenarioId}`}
-              name={proposedResults.length > 1 ? r.scenarioName : 'With New Tool'}
-              stroke={r.color}
-              strokeWidth={2.5}
-              dot={false}
-              activeDot={{ r: 4 }}
-            />
+          {/* Per-scenario savings and investment lines */}
+          {results.map((r) => (
+            <React.Fragment key={r.scenarioId}>
+              <Line
+                type="monotone"
+                dataKey={`savings_${r.scenarioId}`}
+                name={results.length > 1 ? `${r.scenarioName} Savings` : 'Cumulative Savings'}
+                stroke={r.color}
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={{ r: 4 }}
+              />
+              <Line
+                type="monotone"
+                dataKey={`investment_${r.scenarioId}`}
+                name={results.length > 1 ? `${r.scenarioName} Investment` : 'Cumulative Investment'}
+                stroke="#DC2626"
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                dot={false}
+                activeDot={{ r: 4 }}
+              />
+            </React.Fragment>
           ))}
 
-          {/* Per-scenario break-even lines, color-matched */}
-          {proposedResults.map((r) =>
+          {/* Per-scenario break-even lines */}
+          {results.map((r) =>
             r.breakEvenMonth ? (
               <ReferenceLine
                 key={`be-${r.scenarioId}`}
@@ -95,7 +96,7 @@ export function CumulativeCostChart({ data, results, darkMode }: CumulativeCostC
                 strokeWidth={2}
                 strokeDasharray="6 4"
                 label={{
-                  value: `BE: M${r.breakEvenMonth}${proposedResults.length > 1 ? ` (${r.scenarioName})` : ''}`,
+                  value: `BE: M${r.breakEvenMonth}${results.length > 1 ? ` (${r.scenarioName})` : ''}`,
                   position: 'insideTop',
                   fill: r.color,
                   fontSize: 12,

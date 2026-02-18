@@ -2,7 +2,7 @@
  * ScenarioTabs.tsx
  *
  * Horizontal tab bar for switching between scenarios.
- * The current solution tab gets a red dot and "(Baseline)" suffix.
+ * Each scenario gets its own color dot.
  * Double-click a tab name to rename; Enter or blur saves.
  */
 
@@ -42,15 +42,22 @@ export function ScenarioTabs({ scenarios, activeId, dispatch }: ScenarioTabsProp
 
   return (
     <div className="flex items-center gap-1 px-2 pt-3 pb-2 border-b border-edge flex-wrap">
-      {scenarios.map((s, idx) => {
-        const isBaseline = idx === 0;
-        const dotColor = isBaseline ? '#DC2626' : s.color;
+      {scenarios.map((s) => {
+        const dotColor = s.color;
         return (
-          <button
+          <div
             key={s.id}
+            role="tab"
+            tabIndex={0}
             onClick={() => dispatch({ type: 'SET_ACTIVE', id: s.id })}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                dispatch({ type: 'SET_ACTIVE', id: s.id });
+              }
+            }}
             className={`
-              relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors
+              relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors cursor-pointer
               ${
                 s.id === activeId
                   ? 'bg-selected text-ink'
@@ -85,9 +92,6 @@ export function ScenarioTabs({ scenarios, activeId, dispatch }: ScenarioTabsProp
                 title="Double-click to rename"
               >
                 {s.name}
-                {isBaseline && (
-                  <span className="text-xs text-red-400 ml-1">(Baseline)</span>
-                )}
               </span>
             )}
             {scenarios.length > 1 && (
@@ -104,7 +108,7 @@ export function ScenarioTabs({ scenarios, activeId, dispatch }: ScenarioTabsProp
                 </svg>
               </button>
             )}
-          </button>
+          </div>
         );
       })}
 

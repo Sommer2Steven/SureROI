@@ -2,89 +2,198 @@
  * ScenarioPanel.tsx
  *
  * The input form for a scenario.
- * - Baseline (first scenario): Current State, Current Tool Investment, Utilization
- * - Proposed (all others): Current State, New Tool Investment,
- *   Utilization + Efficiency Gains, Qualitative Flags
- *
- * Analysis Period is now global (rendered in App.tsx above the tabs).
+ * Two savings modes: Direct Rate and Time-Based.
+ * Investment section is unchanged (per-tool costs).
+ * Qualitative flags are available on all scenarios.
  */
 
 import React from 'react';
-import type { ScenarioInputs, AppAction } from '../../types';
+import type { ScenarioInputs, AppAction, SavingsMode } from '../../types';
+import { computeSavingsPerUnit } from '../../calculations/engine';
 import { InputSection } from './InputSection';
 import { InputField } from './InputField';
-import { SliderInput } from './SliderInput';
 import { CheckboxField } from './CheckboxField';
-import { formatCurrency } from '../../constants/formatting';
+import { formatCurrency, formatCurrencyDecimals } from '../../constants/formatting';
 
 interface ScenarioPanelProps {
   scenario: ScenarioInputs;
-  isBaseline: boolean;
   dispatch: React.Dispatch<AppAction>;
 }
 
-export function ScenarioPanel({ scenario, isBaseline, dispatch }: ScenarioPanelProps) {
-  const { id, currentState, investment, efficiency, qualitative } = scenario;
+export function ScenarioPanel({ scenario, dispatch }: ScenarioPanelProps) {
+  const { id, savings, investment, qualitative } = scenario;
 
   const totalUpfront = investment.assemblyCost + investment.designCost + investment.controlsCost;
+  const perUnitRate = computeSavingsPerUnit(savings);
+
+  const setMode = (mode: SavingsMode) => {
+    dispatch({ type: 'UPDATE_SAVINGS', id, updates: { mode } });
+  };
 
   return (
     <div className="space-y-0">
-      {/* --- Baseline operational metrics --- */}
-      <InputSection title="Current State">
+      {/* --- Savings section --- */}
+      <InputSection title="Savings">
+        {/* Mode toggle */}
+        <div className="flex rounded-lg border border-edge overflow-hidden mb-2">
+          <button
+            onClick={() => setMode('direct')}
+            className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+              savings.mode === 'direct'
+                ? 'bg-blue-600 text-white'
+                : 'bg-field text-ink-secondary hover:bg-hovered'
+            }`}
+          >
+            Direct Rate
+          </button>
+          <button
+            onClick={() => setMode('time-based')}
+            className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+              savings.mode === 'time-based'
+                ? 'bg-blue-600 text-white'
+                : 'bg-field text-ink-secondary hover:bg-hovered'
+            }`}
+          >
+            Time-Based
+          </button>
+        </div>
+
+        {/* Common fields */}
         <InputField
-          label="Field Workers"
-          value={currentState.workers}
+          label="Unit Name"
+          value={savings.unitName}
           onChange={(v) =>
-            dispatch({ type: 'UPDATE_CURRENT_STATE', id, updates: { workers: v } })
+            dispatch({ type: 'UPDATE_SAVINGS', id, updates: { unitName: v } })
           }
-          min={0}
-          step={1}
+          isText
         />
-        <InputField
-          label="Hourly Rate"
-          value={currentState.hourlyRate}
-          onChange={(v) =>
-            dispatch({ type: 'UPDATE_CURRENT_STATE', id, updates: { hourlyRate: v } })
-          }
-          prefix="$"
-          min={0}
-        />
-        <InputField
-          label="Hours/Week"
-          value={currentState.hoursPerWeek}
-          onChange={(v) =>
-            dispatch({ type: 'UPDATE_CURRENT_STATE', id, updates: { hoursPerWeek: v } })
-          }
-          min={0}
-          max={40}
-        />
-        <SliderInput
-          label="Error/Rework Rate"
-          value={currentState.errorRate}
-          onChange={(v) =>
-            dispatch({ type: 'UPDATE_CURRENT_STATE', id, updates: { errorRate: v } })
-          }
-          max={0.5}
-          step={0.01}
-        />
-        <InputField
-          label="Monthly Ops Costs"
-          value={currentState.monthlyOperationalCosts}
-          onChange={(v) =>
-            dispatch({
-              type: 'UPDATE_CURRENT_STATE',
-              id,
-              updates: { monthlyOperationalCosts: v },
-            })
-          }
-          prefix="$"
-          step={500}
-        />
+
+        {savings.mode === 'direct' ? (
+          /* Direct Rate mode */
+          <>
+            <InputField
+              label="Savings/Unit/Mo"
+              value={savings.directSavingsPerUnit}
+              onChange={(v) =>
+                dispatch({ type: 'UPDATE_SAVINGS', id, updates: { directSavingsPerUnit: v } })
+              }
+              prefix="$"
+              min={0}
+            />
+            <InputField
+              label="Add'l Savings/Unit"
+              value={savings.additionalSavingsPerUnit}
+              onChange={(v) =>
+                dispatch({ type: 'UPDATE_SAVINGS', id, updates: { additionalSavingsPerUnit: v } })
+              }
+              prefix="$"
+              min={0}
+            />
+          </>
+        ) : (
+          /* Time-Based mode */
+          <>
+            <InputField
+              label="Hourly Rate"
+              value={savings.hourlyRate}
+              onChange={(v) =>
+                dispatch({ type: 'UPDATE_SAVINGS', id, updates: { hourlyRate: v } })
+              }
+              prefix="$"
+              min={0}
+            />
+
+            {/* Current section */}
+            <div className="border-t border-edge mt-2 pt-2">
+              <p className="text-xs text-ink-muted uppercase tracking-wider font-medium mb-1">Current</p>
+              <InputField
+                label="Crew Size"
+                value={savings.currentCrewSize}
+                onChange={(v) =>
+                  dispatch({ type: 'UPDATE_SAVINGS', id, updates: { currentCrewSize: v } })
+                }
+                min={0}
+                step={1}
+              />
+              <InputField
+                label="Time/Unit"
+                value={savings.currentTimePerUnit}
+                onChange={(v) =>
+                  dispatch({ type: 'UPDATE_SAVINGS', id, updates: { currentTimePerUnit: v } })
+                }
+                suffix="min"
+                min={0}
+              />
+            </div>
+
+            {/* Proposed section */}
+            <div className="border-t border-edge mt-2 pt-2">
+              <p className="text-xs text-ink-muted uppercase tracking-wider font-medium mb-1">Proposed</p>
+              <InputField
+                label="Crew Size"
+                value={savings.proposedCrewSize}
+                onChange={(v) =>
+                  dispatch({ type: 'UPDATE_SAVINGS', id, updates: { proposedCrewSize: v } })
+                }
+                min={0}
+                step={1}
+              />
+              <InputField
+                label="Time/Unit"
+                value={savings.proposedTimePerUnit}
+                onChange={(v) =>
+                  dispatch({ type: 'UPDATE_SAVINGS', id, updates: { proposedTimePerUnit: v } })
+                }
+                suffix="min"
+                min={0}
+              />
+            </div>
+
+            {/* Derived read-only values */}
+            <div className="border-t border-edge mt-2 pt-2">
+              <p className="text-xs text-ink-muted uppercase tracking-wider font-medium mb-1">Derived</p>
+              <div className="space-y-1 text-sm">
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-ink-secondary">Savings/{savings.unitName}</span>
+                  <span className="font-semibold text-ink-positive">
+                    {formatCurrencyDecimals(perUnitRate)}/{savings.unitName}
+                  </span>
+                </div>
+                {savings.currentTimePerUnit > 0 && (
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-ink-secondary">Time Savings</span>
+                    <span className="font-semibold text-ink">
+                      {Math.max(0, Math.round((1 - savings.proposedTimePerUnit / savings.currentTimePerUnit) * 100))}%
+                    </span>
+                  </div>
+                )}
+                {savings.currentCrewSize > savings.proposedCrewSize && (
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-ink-secondary">Crew Reduction</span>
+                    <span className="font-semibold text-ink">
+                      {savings.currentCrewSize - savings.proposedCrewSize} worker(s)
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <InputField
+              label="Add'l Savings/Unit"
+              value={savings.additionalSavingsPerUnit}
+              onChange={(v) =>
+                dispatch({ type: 'UPDATE_SAVINGS', id, updates: { additionalSavingsPerUnit: v } })
+              }
+              prefix="$"
+              min={0}
+            />
+          </>
+        )}
+
       </InputSection>
 
       {/* --- Investment cost inputs --- */}
-      <InputSection title={isBaseline ? 'Current Tool Investment' : 'New Tool Investment'}>
+      <InputSection title="Investment">
         {/* Read-only total upfront display + lock toggle */}
         <div className="flex items-center justify-between py-1.5 text-sm">
           <span className="text-ink-muted">Total Upfront</span>
@@ -114,7 +223,7 @@ export function ScenarioPanel({ scenario, isBaseline, dispatch }: ScenarioPanelP
           </div>
         </div>
 
-        {/* Collapsible cost breakdown — masked when locked */}
+        {/* Collapsible cost breakdown */}
         <InputSection title="Cost Breakdown" defaultOpen={false}>
           {scenario.costBreakdownLocked ? (
             <div className="space-y-1.5 py-1">
@@ -202,95 +311,30 @@ export function ScenarioPanel({ scenario, isBaseline, dispatch }: ScenarioPanelP
         />
       </InputSection>
 
-      {/* --- Utilization (both) + Efficiency Gains (proposed only) --- */}
-      <InputSection title={isBaseline ? 'Utilization' : 'Efficiency Gains'}>
-        <SliderInput
-          label="Utilization"
-          value={efficiency.utilizationPercent}
+      {/* --- Qualitative flags --- */}
+      <InputSection title="Qualitative Flags">
+        <CheckboxField
+          label="Safety-Critical"
+          checked={qualitative.safetyCritical}
           onChange={(v) =>
-            dispatch({ type: 'UPDATE_EFFICIENCY', id, updates: { utilizationPercent: v } })
+            dispatch({ type: 'UPDATE_QUALITATIVE', id, updates: { safetyCritical: v } })
           }
-          max={1}
-          step={0.01}
         />
-        {!isBaseline && (
-          <>
-            <SliderInput
-              label="Time Savings"
-              value={efficiency.timeSavings}
-              onChange={(v) =>
-                dispatch({ type: 'UPDATE_EFFICIENCY', id, updates: { timeSavings: v } })
-              }
-              max={0.8}
-              step={0.01}
-            />
-            <SliderInput
-              label="Error Reduction"
-              value={efficiency.errorReduction}
-              onChange={(v) =>
-                dispatch({ type: 'UPDATE_EFFICIENCY', id, updates: { errorReduction: v } })
-              }
-              max={1}
-              step={0.01}
-            />
-            <InputField
-              label="Adoption Ramp"
-              value={efficiency.adoptionRampMonths}
-              onChange={(v) =>
-                dispatch({
-                  type: 'UPDATE_EFFICIENCY',
-                  id,
-                  updates: { adoptionRampMonths: v },
-                })
-              }
-              suffix="mo"
-              min={1}
-              max={24}
-              step={1}
-            />
-            <InputField
-              label="Add'l Revenue/mo"
-              value={efficiency.additionalMonthlyRevenue}
-              onChange={(v) =>
-                dispatch({
-                  type: 'UPDATE_EFFICIENCY',
-                  id,
-                  updates: { additionalMonthlyRevenue: v },
-                })
-              }
-              prefix="$"
-              step={1000}
-            />
-          </>
-        )}
+        <CheckboxField
+          label="Quality-Critical"
+          checked={qualitative.qualityCritical}
+          onChange={(v) =>
+            dispatch({ type: 'UPDATE_QUALITATIVE', id, updates: { qualityCritical: v } })
+          }
+        />
+        <CheckboxField
+          label="Operations-Critical"
+          checked={qualitative.operationsCritical}
+          onChange={(v) =>
+            dispatch({ type: 'UPDATE_QUALITATIVE', id, updates: { operationsCritical: v } })
+          }
+        />
       </InputSection>
-
-      {/* --- Qualitative: proposed scenarios only --- */}
-      {!isBaseline && (
-        <InputSection title="Qualitative Flags">
-          <CheckboxField
-            label="Safety-Critical"
-            checked={qualitative.safetyCritical}
-            onChange={(v) =>
-              dispatch({ type: 'UPDATE_QUALITATIVE', id, updates: { safetyCritical: v } })
-            }
-          />
-          <CheckboxField
-            label="Quality-Critical"
-            checked={qualitative.qualityCritical}
-            onChange={(v) =>
-              dispatch({ type: 'UPDATE_QUALITATIVE', id, updates: { qualityCritical: v } })
-            }
-          />
-          <CheckboxField
-            label="Operations-Critical"
-            checked={qualitative.operationsCritical}
-            onChange={(v) =>
-              dispatch({ type: 'UPDATE_QUALITATIVE', id, updates: { operationsCritical: v } })
-            }
-          />
-        </InputSection>
-      )}
     </div>
   );
 }

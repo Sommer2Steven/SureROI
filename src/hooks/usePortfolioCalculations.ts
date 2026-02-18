@@ -1,12 +1,13 @@
 /**
  * hooks/usePortfolioCalculations.ts
  *
- * Computes ROI results for each portfolio entry with calendar-based scaling,
- * then builds monthly timeline data for stacked bar charts.
+ * Computes ROI results for each portfolio entry with unit-based scaling,
+ * tool count investment multiplier, cost exclusions, and overtime premium.
+ * Then builds monthly timeline data for stacked bar charts.
  */
 
 import { useMemo } from 'react';
-import type { PortfolioEntry, ScenarioResults } from '../types';
+import type { PortfolioEntry, ScenarioResults, ScenarioInputs } from '../types';
 import { computeScenario } from '../calculations/engine';
 import {
   monthsBetween,
@@ -19,8 +20,11 @@ export interface PortfolioEntryResult {
   results: ScenarioResults;
   durationMonths: number;
   scaleFactor: number;
+  scaledTotalSavings: number;
   scaledTotalValue: number;
   scaledTotalInvestment: number;
+  hasOvertime: boolean;
+  overtimePremium: number;
 }
 
 export interface PortfolioAggregates {
@@ -37,8 +41,6 @@ export interface PortfolioTimelinePoint {
   [entryId: string]: string | number;
 }
 
-const WEEKS_PER_MONTH = 4.33;
-
 export function usePortfolioCalculations(
   entries: PortfolioEntry[],
   departmentAnnualSalary: number,
@@ -51,55 +53,83 @@ export function usePortfolioCalculations(
         entry.analysisPeriod,
       );
 
-      // Scale factor: (estimatedHours / durationMonths) / baseline monthly hours
-      const baseMonthlyHours =
-        entry.baselineCurrentState.workers *
-        entry.baselineCurrentState.hoursPerWeek *
-        WEEKS_PER_MONTH;
+      // Scale factor: actual units / reference units (floor at 1 since input is hidden)
+      const referenceUnits = Math.max(1, entry.baselineSavings.referenceUnits);
+      let scaleFactor = entry.actualUnits / referenceUnits;
 
-      let scaleFactor = 0;
-      if (durationMonths > 0 && baseMonthlyHours > 0) {
-        scaleFactor = (entry.estimatedHours / durationMonths) / baseMonthlyHours;
+      // Overtime premium for time-based scenarios
+      let hasOvertime = false;
+      let overtimePremium = 1;
+      if (entry.scenario.savings.mode === 'time-based' && durationMonths > 0) {
+        const weeksInDuration = durationMonths * 4.33;
+        const currentCrewSize = entry.scenario.savings.currentCrewSize;
+        if (currentCrewSize > 0 && weeksInDuration > 0) {
+          const weeklyHours = (entry.actualUnits * entry.scenario.savings.currentTimePerUnit / 60)
+            / weeksInDuration * durationMonths;
+          // Normalize to per-week
+          const weeklyHoursPerWorker = weeklyHours / currentCrewSize / durationMonths;
+          if (weeklyHoursPerWorker > 40) {
+            hasOvertime = true;
+            const effectiveHours = 40 + (weeklyHoursPerWorker - 40) * 1.5;
+            overtimePremium = effectiveHours / weeklyHoursPerWorker;
+            scaleFactor *= overtimePremium;
+          }
+        }
       }
 
-      // Apply excludeDesignControls
-      let scenario = entry.scenario;
+      // Build modified scenario with cost exclusions and tool count
+      const inv = { ...entry.scenario.investment };
+
+      // Exclusions
       if (entry.excludeDesignControls) {
-        scenario = {
-          ...scenario,
-          investment: {
-            ...scenario.investment,
-            designCost: 0,
-            controlsCost: 0,
-          },
-        };
+        inv.designCost = 0;
+        inv.controlsCost = 0;
+      }
+      if (entry.excludeTraining) {
+        inv.trainingCost = 0;
       }
 
-      const results = computeScenario(
-        scenario,
-        entry.analysisPeriod,
-        entry.baselineCurrentState,
-      );
+      // Tool count multiplies per-tool costs only.
+      // Design & controls are one-time development costs — they do NOT scale with tool count.
+      inv.assemblyCost *= entry.toolCount;
+      inv.trainingCost *= entry.toolCount;
+      inv.deploymentCost *= entry.toolCount;
+      inv.monthlyRecurringCost *= entry.toolCount;
 
-      const scaledTotalValue = results.threeYearNetSavings * scaleFactor;
-      const scaledTotalInvestment = results.totalInvestment * scaleFactor;
+      const modifiedScenario: ScenarioInputs = {
+        ...entry.scenario,
+        investment: inv,
+      };
+
+      const results = computeScenario(modifiedScenario, entry.analysisPeriod);
+
+      // Savings scale with unit ratio; investment does NOT (already adjusted for toolCount)
+      const lastBreakdown = results.monthlyBreakdowns[results.monthlyBreakdowns.length - 1];
+      const baseCumulativeSavings = lastBreakdown?.cumulativeSavings ?? 0;
+      const scaledTotalSavings = baseCumulativeSavings * scaleFactor;
+      const scaledTotalInvestment = results.totalInvestment;
+      const scaledTotalValue = scaledTotalSavings - scaledTotalInvestment;
 
       return {
         entry,
         results,
         durationMonths,
         scaleFactor,
+        scaledTotalSavings,
         scaledTotalValue,
         scaledTotalInvestment,
+        hasOvertime,
+        overtimePremium,
       };
     });
 
-    // Aggregates using scaled values
-    const totalValueCreated = entryResults.reduce(
+    // Aggregates using scaled values (exclude hidden entries)
+    const visibleResults = entryResults.filter((er) => !er.entry.hidden);
+    const totalValueCreated = visibleResults.reduce(
       (sum, er) => sum + er.scaledTotalValue,
       0,
     );
-    const totalInvestment = entryResults.reduce(
+    const totalInvestment = visibleResults.reduce(
       (sum, er) => sum + er.scaledTotalInvestment,
       0,
     );
@@ -122,7 +152,7 @@ export function usePortfolioCalculations(
     let netPositionTimeline: PortfolioTimelinePoint[] = [];
 
     const validEntries = entryResults.filter(
-      (er) => er.durationMonths > 0 && er.scaleFactor > 0,
+      (er) => er.durationMonths > 0 && er.scaleFactor > 0 && !er.entry.hidden,
     );
 
     if (validEntries.length > 0) {
@@ -172,8 +202,10 @@ export function usePortfolioCalculations(
           );
           const idx = entryRange.indexOf(monthKey);
           if (idx >= 0 && idx < er.results.monthlyBreakdowns.length) {
-            point[er.entry.id] =
-              er.results.monthlyBreakdowns[idx].netPosition * er.scaleFactor;
+            // Savings scale with unit ratio; investment does not
+            const scaledCumSavings = er.results.monthlyBreakdowns[idx].cumulativeSavings * er.scaleFactor;
+            const cumInvestment = er.results.monthlyBreakdowns[idx].cumulativeInvestment;
+            point[er.entry.id] = scaledCumSavings - cumInvestment;
           } else {
             point[er.entry.id] = 0;
           }

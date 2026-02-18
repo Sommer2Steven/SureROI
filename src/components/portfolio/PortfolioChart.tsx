@@ -79,9 +79,9 @@ export function PortfolioChart({
 }: PortfolioChartProps) {
   const data = chartView === 'monthly-savings' ? monthlySavingsTimeline : netPositionTimeline;
 
-  // Entries that contribute to the chart (have data keys in timeline points)
+  // Entries that contribute to the chart (visible, with valid data)
   const activeEntries = entryResults.filter(
-    (er) => er.durationMonths > 0 && er.scaleFactor > 0,
+    (er) => er.durationMonths > 0 && er.scaleFactor > 0 && !er.entry.hidden,
   );
 
   if (activeEntries.length === 0 || data.length === 0) {
@@ -95,6 +95,44 @@ export function PortfolioChart({
   const gridColor = darkMode ? '#334155' : '#e2e8f0';
   const axisColor = darkMode ? '#9ca3af' : '#64748b';
   const deptMonthlyCost = departmentAnnualSalary / 12;
+
+  // Helper: sum entry values at a timeline point
+  const sumAtPoint = (pt: PortfolioTimelinePoint) =>
+    activeEntries.reduce((sum, er) => {
+      const v = pt[er.entry.id];
+      return sum + (typeof v === 'number' ? v : 0);
+    }, 0);
+
+  // Breakeven with 0: first month where total net position > 0
+  const breakEvenZero = (() => {
+    for (let i = 0; i < netPositionTimeline.length; i++) {
+      if (sumAtPoint(netPositionTimeline[i]) > 0) {
+        return { label: netPositionTimeline[i].label, month: i + 1 };
+      }
+    }
+    return null;
+  })();
+
+
+
+  // Ensure Y-axis domain includes the department monthly cost line
+  const allValues = data.flatMap((pt) =>
+    activeEntries.map((er) => {
+      const v = pt[er.entry.id];
+      return typeof v === 'number' ? v : 0;
+    }),
+  );
+  // For stacked bars, sum the positive values per point
+  const stackedMaxes = data.map((pt) =>
+    activeEntries.reduce((sum, er) => {
+      const v = pt[er.entry.id];
+      return sum + (typeof v === 'number' && v > 0 ? v : 0);
+    }, 0),
+  );
+  const dataMax = Math.max(...stackedMaxes, 0);
+  const dataMin = Math.min(...allValues, 0);
+  const yDomainMax = deptMonthlyCost > 0 ? Math.max(dataMax, deptMonthlyCost) * 1.1 : undefined;
+  const yDomainMin = dataMin < 0 ? dataMin * 1.1 : 0;
 
   // Auto-calculate tick interval for readability
   const tickInterval = data.length > 24 ? 2 : data.length > 12 ? 1 : 0;
@@ -149,6 +187,7 @@ export function PortfolioChart({
             stroke={axisColor}
             tick={{ fontSize: 14 }}
             tickFormatter={formatYAxisK}
+            domain={[yDomainMin, yDomainMax ?? 'auto']}
           />
           <Tooltip content={<PortfolioTooltip />} />
 
@@ -169,6 +208,22 @@ export function PortfolioChart({
                 position: 'right',
                 fill: '#F59E0B',
                 fontSize: 12,
+              }}
+            />
+          )}
+
+          {/* Breakeven with $0 — net-position view only */}
+          {chartView === 'net-position' && breakEvenZero && (
+            <ReferenceLine
+              x={breakEvenZero.label}
+              stroke="#10B981"
+              strokeWidth={2}
+              strokeDasharray="6 4"
+              label={{
+                value: `Break-even (Mo ${breakEvenZero.month})`,
+                position: 'top',
+                fill: '#10B981',
+                fontSize: 11,
               }}
             />
           )}
@@ -207,6 +262,17 @@ export function PortfolioChart({
               />
             </svg>
             <span className="text-amber-400 font-medium">Dept Monthly Cost</span>
+          </div>
+        )}
+        {chartView === 'net-position' && breakEvenZero && (
+          <div className="flex items-center gap-1.5">
+            <svg width="20" height="4" className="shrink-0">
+              <line
+                x1="0" y1="2" x2="20" y2="2"
+                stroke="#10B981" strokeWidth="2" strokeDasharray="4 3"
+              />
+            </svg>
+            <span className="text-emerald-400 font-medium">Break-even (Mo {breakEvenZero.month})</span>
           </div>
         )}
       </div>

@@ -2,8 +2,8 @@
  * PortfolioBreakdown.tsx
  *
  * Collapsible "Show the Math" panel for portfolio mode.
- * Explains how scale factors, scaled values, and aggregate metrics are derived.
- * Per-entry formulas are shown grouped by project, followed by portfolio-level aggregates.
+ * Shows unit-based scaling, tool count multiplier, cost exclusions,
+ * overtime premium, and aggregate metrics.
  */
 
 import React, { useState } from 'react';
@@ -14,8 +14,6 @@ import { formatCurrency, formatCurrencyK, formatNumber } from '../../constants/f
 import { formatMonthLabel, monthsBetween } from '../../utils/calendarUtils';
 import { FormulaRow } from '../breakdown/FormulaRow';
 
-const WEEKS_PER_MONTH = 4.33;
-
 interface PortfolioBreakdownProps {
   entryResults: PortfolioEntryResult[];
   aggregates: PortfolioAggregates;
@@ -24,11 +22,12 @@ interface PortfolioBreakdownProps {
 
 /** Build formula cards for a single portfolio entry. */
 function getEntryFormulas(er: PortfolioEntryResult): FormulaDisplay[] {
-  const { entry, results, durationMonths, scaleFactor, scaledTotalValue, scaledTotalInvestment } = er;
-  const baseline = entry.baselineCurrentState;
-  const baseMonthlyHours = baseline.workers * baseline.hoursPerWeek * WEEKS_PER_MONTH;
-  const hoursPerMonth = durationMonths > 0 ? entry.estimatedHours / durationMonths : 0;
+  const { entry, results, durationMonths, scaleFactor, scaledTotalSavings, scaledTotalValue, scaledTotalInvestment, hasOvertime, overtimePremium } = er;
+  const refUnits = entry.baselineSavings.referenceUnits;
   const duration = monthsBetween(entry.startMonth, entry.endMonth);
+  const unitName = entry.scenario.savings.unitName;
+  const lastBreakdown = results.monthlyBreakdowns[results.monthlyBreakdowns.length - 1];
+  const baseCumulativeSavings = lastBreakdown?.cumulativeSavings ?? 0;
 
   const formulas: FormulaDisplay[] = [
     {
@@ -39,57 +38,48 @@ function getEntryFormulas(er: PortfolioEntryResult): FormulaDisplay[] {
       result: `${duration} months${duration !== durationMonths ? ` (capped to ${durationMonths} by analysis period)` : ''}`,
     },
     {
-      id: `${entry.id}-base-monthly-hours`,
-      label: 'Baseline Monthly Hours',
-      formula: 'workers × hours_per_week × 4.33',
-      substituted: `${baseline.workers} × ${baseline.hoursPerWeek} × 4.33`,
-      result: `${formatNumber(baseMonthlyHours)} hrs/mo`,
-    },
-    {
-      id: `${entry.id}-hours-per-month`,
-      label: 'Est. Hours per Month',
-      formula: 'estimated_hours / duration',
-      substituted: durationMonths > 0
-        ? `${formatNumber(entry.estimatedHours)} / ${durationMonths}`
-        : `${formatNumber(entry.estimatedHours)} / 0`,
-      result: `${formatNumber(hoursPerMonth)} hrs/mo`,
-    },
-    {
       id: `${entry.id}-scale-factor`,
       label: 'Scale Factor',
-      formula: '(est_hours / duration) / baseline_monthly_hours',
-      substituted: baseMonthlyHours > 0 && durationMonths > 0
-        ? `(${formatNumber(entry.estimatedHours)} / ${durationMonths}) / ${formatNumber(baseMonthlyHours)}`
-        : 'N/A (zero baseline hours or zero duration)',
-      result: `${(scaleFactor * 100).toFixed(2)}%`,
+      formula: `actual_${unitName}s / reference_${unitName}s`,
+      substituted: refUnits > 0
+        ? `${formatNumber(entry.actualUnits)} / ${formatNumber(refUnits)}`
+        : `N/A (zero reference ${unitName}s)`,
+      result: `${(scaleFactor * 100).toFixed(2)}%${hasOvertime ? ` (incl. ${((overtimePremium - 1) * 100).toFixed(0)}% OT premium)` : ''}`,
     },
     {
-      id: `${entry.id}-base-value`,
-      label: 'Base Net Savings (unscaled)',
-      formula: 'computeScenario(scenario, period, baseline).netSavings',
-      substituted: `Full ${entry.analysisPeriod}-month simulation → net position at end`,
-      result: formatCurrency(results.threeYearNetSavings),
+      id: `${entry.id}-tool-count`,
+      label: 'Tool Count',
+      formula: 'assembly, training, deployment, recurring x tool_count (design & controls are one-time)',
+      substituted: `Per-tool costs x ${entry.toolCount}; design & controls unchanged`,
+      result: `${entry.toolCount} tool(s)`,
+    },
+    {
+      id: `${entry.id}-base-savings`,
+      label: 'Base Cumulative Savings (unscaled)',
+      formula: 'cumulative savings over period (1 reference unit)',
+      substituted: `Full ${entry.analysisPeriod}-month simulation`,
+      result: formatCurrency(baseCumulativeSavings),
+    },
+    {
+      id: `${entry.id}-scaled-savings`,
+      label: 'Scaled Cumulative Savings',
+      formula: 'base_cumulative_savings x scale_factor',
+      substituted: `${formatCurrency(baseCumulativeSavings)} x ${(scaleFactor * 100).toFixed(2)}%`,
+      result: formatCurrency(scaledTotalSavings),
+    },
+    {
+      id: `${entry.id}-investment`,
+      label: 'Total Investment (tool-count adjusted)',
+      formula: 'cumulative investment over period (adjusted for tool count, not unit ratio)',
+      substituted: `Tool count: ${entry.toolCount}; investment does not scale with unit ratio`,
+      result: formatCurrency(scaledTotalInvestment),
     },
     {
       id: `${entry.id}-scaled-value`,
       label: 'Scaled Net Value',
-      formula: 'base_net_savings × scale_factor',
-      substituted: `${formatCurrency(results.threeYearNetSavings)} × ${(scaleFactor * 100).toFixed(2)}%`,
+      formula: 'scaled_cumulative_savings - total_investment',
+      substituted: `${formatCurrency(scaledTotalSavings)} - ${formatCurrency(scaledTotalInvestment)}`,
       result: formatCurrency(scaledTotalValue),
-    },
-    {
-      id: `${entry.id}-base-investment`,
-      label: 'Base Total Investment (unscaled)',
-      formula: 'computeScenario(scenario, period, baseline).totalInvestment',
-      substituted: `Cumulative investment over ${entry.analysisPeriod} months`,
-      result: formatCurrency(results.totalInvestment),
-    },
-    {
-      id: `${entry.id}-scaled-investment`,
-      label: 'Scaled Total Investment',
-      formula: 'base_investment × scale_factor',
-      substituted: `${formatCurrency(results.totalInvestment)} × ${(scaleFactor * 100).toFixed(2)}%`,
-      result: formatCurrency(scaledTotalInvestment),
     },
   ];
 
@@ -100,6 +90,26 @@ function getEntryFormulas(er: PortfolioEntryResult): FormulaDisplay[] {
       formula: 'designCost = 0, controlsCost = 0',
       substituted: `Original design: ${formatCurrency(entry.scenario.investment.designCost)}, controls: ${formatCurrency(entry.scenario.investment.controlsCost)}`,
       result: 'Both zeroed before computation',
+    });
+  }
+
+  if (entry.excludeTraining) {
+    formulas.push({
+      id: `${entry.id}-exclude-training`,
+      label: 'Exclude Training',
+      formula: 'trainingCost = 0',
+      substituted: `Original training: ${formatCurrency(entry.scenario.investment.trainingCost)}`,
+      result: 'Zeroed before computation',
+    });
+  }
+
+  if (hasOvertime) {
+    formulas.push({
+      id: `${entry.id}-overtime`,
+      label: 'Overtime Premium',
+      formula: '(40 + (weekly_hours - 40) x 1.5) / weekly_hours',
+      substituted: `Premium factor: ${overtimePremium.toFixed(3)}`,
+      result: `${((overtimePremium - 1) * 100).toFixed(1)}% additional cost`,
     });
   }
 
@@ -119,14 +129,14 @@ function getAggregateFormulas(
     {
       id: 'agg-total-value',
       label: 'Total Value Created',
-      formula: 'Σ scaled_net_value (all entries)',
+      formula: 'sum scaled_net_value (all entries)',
       substituted: entryResults.length > 0 ? entryValueTerms : '(no entries)',
       result: formatCurrency(aggregates.totalValueCreated),
     },
     {
       id: 'agg-total-investment',
-      label: 'Total Scaled Investment',
-      formula: 'Σ scaled_investment (all entries)',
+      label: 'Total Investment',
+      formula: 'sum investment (all entries, tool-count adjusted, not unit-scaled)',
       substituted: entryResults.length > 0 ? entryInvestTerms : '(no entries)',
       result: formatCurrency(aggregates.totalInvestment),
     },
@@ -140,29 +150,27 @@ function getAggregateFormulas(
     {
       id: 'agg-net-profit',
       label: 'Net Profit',
-      formula: 'total_value − department_cost',
-      substituted: `${formatCurrency(aggregates.totalValueCreated)} − ${formatCurrency(departmentAnnualSalary)}`,
+      formula: 'total_value - department_cost',
+      substituted: `${formatCurrency(aggregates.totalValueCreated)} - ${formatCurrency(departmentAnnualSalary)}`,
       result: formatCurrency(aggregates.netProfit),
     },
     {
       id: 'agg-dept-roi',
       label: 'Department ROI',
-      formula: '((total_value − dept_cost) / dept_cost) × 100',
+      formula: '((total_value - dept_cost) / dept_cost) x 100',
       substituted: departmentAnnualSalary > 0
-        ? `((${formatCurrency(aggregates.totalValueCreated)} − ${formatCurrency(departmentAnnualSalary)}) / ${formatCurrency(departmentAnnualSalary)}) × 100`
+        ? `((${formatCurrency(aggregates.totalValueCreated)} - ${formatCurrency(departmentAnnualSalary)}) / ${formatCurrency(departmentAnnualSalary)}) x 100`
         : 'N/A (department cost is $0)',
       result: `${aggregates.departmentROI.toFixed(1)}%`,
     },
+    {
+      id: 'agg-timeline',
+      label: 'Monthly Timeline Values',
+      formula: 'For each calendar month: sum (monthly_breakdown[i] x scale_factor) per entry',
+      substituted: 'Each entry\'s month-by-month breakdown is indexed into its calendar range and scaled',
+      result: 'Stacked per entry in chart',
+    },
   ];
-
-  // Timeline explanation
-  formulas.push({
-    id: 'agg-timeline',
-    label: 'Monthly Timeline Values',
-    formula: 'For each calendar month: Σ (monthly_breakdown[i] × scale_factor) per entry',
-    substituted: 'Each entry\'s month-by-month breakdown is indexed into its calendar range and scaled',
-    result: 'Stacked per entry in chart',
-  });
 
   return formulas;
 }
@@ -227,7 +235,7 @@ export function PortfolioBreakdown({
               const entryFormulas = isExpanded ? getEntryFormulas(er) : [];
 
               return (
-                <div key={er.entry.id} className="border border-edge rounded-lg overflow-hidden">
+                <div key={er.entry.id} className="border border-edge rounded-lg overflow-hidden bg-card">
                   <button
                     onClick={() => toggleEntry(er.entry.id)}
                     className="w-full flex items-center gap-2 px-4 py-3 text-sm font-medium text-ink hover:bg-hovered transition-colors"
